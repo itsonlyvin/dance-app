@@ -1,4 +1,4 @@
-name: t_store
+name: Fin
 description: A new Flutter project.
 
 publish_to: 'none'
@@ -70,6 +70,7 @@ flutter:
     - assets/images/animations/
     - assets/icons/payment_methods/
     - assets/images/on_boarding_images/
+    - assets/images/og_creation/
 
   #--------------- LOCAL FONTS ------------------#
   fonts:

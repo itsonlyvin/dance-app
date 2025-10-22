@@ -1,7 +1,7 @@
+import 'package:Fin/features/home/homescreen.dart';
+import 'package:Fin/utils/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-
-import 'package:t_store/utils/theme/theme.dart';
 
 void main() {
   runApp(const MyApp());
@@ -18,13 +18,9 @@ class MyApp extends StatelessWidget {
       themeMode: ThemeMode.system,
       theme: TAppTheme.lightTheme,
       darkTheme: TAppTheme.darkTheme,
-      title: 'Base',
+      title: 'Fin',
       // The home widget is the main screen of the application.
-      home: const Scaffold(
-        body: Center(
-          child: Text("Hello"),
-        ),
-      ),
+      home: const Homescreen(),
     );
   }
 }
