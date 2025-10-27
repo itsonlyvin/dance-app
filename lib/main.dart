@@ -1,4 +1,4 @@
-import 'package:Fin/features/home/homescreen.dart';
+import 'package:Fin/features/onboarding/onboarding.dart';
 import 'package:Fin/utils/theme/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -12,15 +12,13 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // This is the main entry point of the application.
     return GetMaterialApp(
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.system,
       theme: TAppTheme.lightTheme,
       darkTheme: TAppTheme.darkTheme,
       title: 'Fin',
-      // The home widget is the main screen of the application.
-      home: const Homescreen(),
+      home: const OnboardingScreen(),
     );
   }
 }

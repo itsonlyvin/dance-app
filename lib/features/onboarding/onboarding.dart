@@ -1,41 +1,61 @@
-import 'package:Fin/features/fin_dance/fin_dance.dart';
+import 'package:Fin/features/sections/section.dart';
 import 'package:flutter/material.dart';
+import 'package:carousel_slider/carousel_slider.dart';
 import 'package:Fin/utils/constants/colors.dart';
 import 'package:Fin/utils/constants/image_strings.dart';
 import 'package:Fin/utils/constants/sizes.dart';
 import 'package:Fin/utils/helpers/helper_functions.dart';
-import 'package:carousel_slider/carousel_slider.dart';
 
-class Homescreen extends StatefulWidget {
-  const Homescreen({super.key});
+// Import your screens
+import 'package:Fin/features/students/students.dart';
+import 'package:Fin/features/teachers/teachers.dart';
+import 'package:Fin/features/fee/fee.dart';
+
+class OnboardingScreen extends StatefulWidget {
+  const OnboardingScreen({super.key});
 
   @override
-  State<Homescreen> createState() => _HomescreenState();
+  State<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-class _HomescreenState extends State<Homescreen> {
-  int _currentIndex = 0; // tracks center carousel card
+class _OnboardingScreenState extends State<OnboardingScreen> {
+  int _currentIndex = 0; // Tracks center carousel card
   double _scale = 1.0;
 
+  // Define your product cards
   final List<Map<String, String>> _products = [
     {
-      'title': 'Fin Dance',
-      'description': 'This is product 1',
+      'title': 'Section',
+      'description': 'Manage sections',
       'image': TImages.og02,
       'image1': TImages.og01,
     },
     {
-      'title': 'Product 2',
-      'description': 'This is product 2',
+      'title': 'Students',
+      'description': 'View and manage students',
       'image': TImages.og03,
       'image1': TImages.og04,
     },
     {
-      'title': 'Product 3',
-      'description': 'This is product 3',
+      'title': 'Teachers',
+      'description': 'Teacher information',
       'image': TImages.og08,
       'image1': TImages.og09,
     },
+    {
+      'title': 'Fees',
+      'description': 'Manage fee collection',
+      'image': TImages.og05,
+      'image1': TImages.og06,
+    },
+  ];
+
+  // Corresponding screens
+  final List<Widget> screens = [
+    const Section(),
+    const Students(),
+    const Teachers(),
+    const Fee(),
   ];
 
   @override
@@ -140,22 +160,22 @@ class _HomescreenState extends State<Homescreen> {
                     ),
                   );
 
-                  // Wrap only center card with gesture and scale animation
+                  // Wrap only center card with gesture and animation
                   if (isCenter) {
                     card = GestureDetector(
                       onTap: () async {
-                        setState(() => _scale = 1.1); // scale up
+                        setState(() => _scale = 0.9); // scale down briefly
                         await Future.delayed(
-                          const Duration(milliseconds: 200),
+                          const Duration(milliseconds: 150),
                         );
-                        setState(() => _scale = 1.0); // reset
+                        setState(() => _scale = 1.0); // reset scale
+                        await Future.delayed(
+                          const Duration(milliseconds: 150),
+                        );
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => FinDance(
-                              title: product['title']!,
-                              image: product['image']!,
-                            ),
+                            builder: (context) => screens[productIndex],
                           ),
                         );
                       },
