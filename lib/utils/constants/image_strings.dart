@@ -3,6 +3,9 @@
 /// This class contains all the App Images in String formats.
 class TImages {
   // -- Main Home Screen
+
+  static const String logo = "assets/images/og_creation/logo.png";
+
   static const String og01 = "assets/images/og_creation/d1.jpeg";
   static const String og02 = "assets/images/og_creation/d2.jpeg";
   static const String og03 = "assets/images/og_creation/f1.jpeg";
