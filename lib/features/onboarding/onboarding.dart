@@ -1,15 +1,10 @@
-import 'package:Fin/features/sections/section.dart';
-import 'package:flutter/material.dart';
-import 'package:carousel_slider/carousel_slider.dart';
+import 'package:Fin/navigation.dart';
 import 'package:Fin/utils/constants/colors.dart';
 import 'package:Fin/utils/constants/image_strings.dart';
 import 'package:Fin/utils/constants/sizes.dart';
 import 'package:Fin/utils/helpers/helper_functions.dart';
-
-// Import your screens
-import 'package:Fin/features/students/students.dart';
-import 'package:Fin/features/teachers/teachers.dart';
-import 'package:Fin/features/fee/fee.dart';
+import 'package:carousel_slider/carousel_slider.dart';
+import 'package:flutter/material.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -48,14 +43,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       'image': TImages.og05,
       'image1': TImages.og06,
     },
-  ];
-
-  // Corresponding screens
-  final List<Widget> screens = [
-    const Section(),
-    const Students(),
-    const Teachers(),
-    const Fee(),
   ];
 
   @override
@@ -164,18 +151,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   if (isCenter) {
                     card = GestureDetector(
                       onTap: () async {
-                        setState(() => _scale = 0.9); // scale down briefly
-                        await Future.delayed(
-                          const Duration(milliseconds: 150),
-                        );
-                        setState(() => _scale = 1.0); // reset scale
-                        await Future.delayed(
-                          const Duration(milliseconds: 150),
-                        );
+                        // Scale down briefly for click animation
+                        setState(() => _scale = 0.9);
+                        await Future.delayed(const Duration(milliseconds: 150));
+                        setState(() => _scale = 1.0);
+                        await Future.delayed(const Duration(milliseconds: 150));
+
+                        // Navigate to NavigationMenu and pass selected index
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => screens[productIndex],
+                            builder: (context) => NavigationMenu(
+                              initialIndex: productIndex,
+                            ),
                           ),
                         );
                       },
