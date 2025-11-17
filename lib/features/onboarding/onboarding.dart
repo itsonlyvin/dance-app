@@ -1,8 +1,7 @@
+import 'dart:ui';
 import 'package:Fin/navigation.dart';
 import 'package:Fin/utils/constants/colors.dart';
 import 'package:Fin/utils/constants/image_strings.dart';
-import 'package:Fin/utils/constants/sizes.dart';
-import 'package:Fin/utils/helpers/helper_functions.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter/material.dart';
 
@@ -14,57 +13,83 @@ class OnboardingScreen extends StatefulWidget {
 }
 
 class _OnboardingScreenState extends State<OnboardingScreen> {
-  int _currentIndex = 0; // Tracks center carousel card
+  int _currentIndex = 0;
   double _scale = 1.0;
 
-  // Define your product cards
   final List<Map<String, String>> _products = [
-    {
-      'title': 'Section',
-      'description': 'Manage sections',
-      'image': TImages.og02,
-      'image1': TImages.og01,
-    },
-    {
-      'title': 'Students',
-      'description': 'View and manage students',
-      'image': TImages.og03,
-      'image1': TImages.og04,
-    },
-    {
-      'title': 'Teachers',
-      'description': 'Teacher information',
-      'image': TImages.og08,
-      'image1': TImages.og09,
-    },
-    {
-      'title': 'Fees',
-      'description': 'Manage fee collection',
-      'image': TImages.og05,
-      'image1': TImages.og06,
-    },
+    {'title': 'Section', 'image': TImages.og02, 'image1': TImages.og01},
+    {'title': 'Students', 'image': TImages.og03, 'image1': TImages.og04},
+    {'title': 'Teachers', 'image': TImages.og08, 'image1': TImages.og09},
+    {'title': 'Fees', 'image': TImages.og05, 'image1': TImages.og06},
   ];
 
   @override
   Widget build(BuildContext context) {
     final double screenWidth = MediaQuery.of(context).size.width;
     final double screenHeight = MediaQuery.of(context).size.height;
-    final bool dark = THelperFunctions.isDarkMode(context);
+
+    // 💡 MATCHING HEIGHT FOR CAROUSEL, CARD & IMAGE
+    final double cardHeight = screenHeight * 0.40;
+
+    const gradientColors = [
+      Color.fromRGBO(0, 0, 0, 1),
+      Color.fromRGBO(0, 0, 0, 0.85),
+      Color.fromRGBO(0, 0, 0, 0.5),
+      Colors.transparent,
+    ];
 
     return Scaffold(
       body: Stack(
         children: [
-          // Background image
+          // ---------------------- PARALLAX BACKGROUND ----------------------
           Positioned.fill(
-            child: Image.asset(
-              _products[_currentIndex]['image1']!,
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
+            child: AnimatedScale(
+              duration: const Duration(milliseconds: 600),
+              scale: 1.02,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Image.asset(
+                      _products[_currentIndex]['image1']!,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+
+                  // Cinematic gradient
+                  Positioned.fill(
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: gradientColors,
+                          stops: [0.0, 0.25, 0.55, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Vignette
+                  Positioned.fill(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: RadialGradient(
+                          center: Alignment.center,
+                          radius: 1.0,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withOpacity(0.4),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
 
-          // Carousel pinned to bottom
+          // ---------------------- CAROUSEL ----------------------
           Align(
             alignment: Alignment.bottomCenter,
             child: SizedBox(
@@ -72,105 +97,123 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               width: screenWidth,
               child: CarouselSlider(
                 options: CarouselOptions(
-                  height: screenHeight * 0.50,
-                  aspectRatio: 16 / 9,
+                  height: cardHeight, // 👈 MATCH HEIGHT
                   viewportFraction: 0.70,
                   enlargeCenterPage: true,
                   enableInfiniteScroll: true,
-                  onPageChanged: (index, reason) {
-                    setState(() {
-                      _currentIndex = index;
-                    });
+                  onPageChanged: (index, _) {
+                    setState(() => _currentIndex = index);
                   },
                 ),
                 items: _products.map((product) {
                   final productIndex = _products.indexOf(product);
                   final bool isCenter = productIndex == _currentIndex;
+                  final double lift = isCenter ? -12 : 0;
 
-                  Widget card = AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: dark ? TColors.dark : TColors.light,
-                      borderRadius: BorderRadius.circular(20),
-                      border: isCenter
-                          ? Border.all(color: Colors.blue.shade500, width: 1.5)
-                          : null,
-                      boxShadow: isCenter
-                          ? [
-                              const BoxShadow(
-                                color: Colors.black,
-                                blurRadius: 30,
-                                offset: Offset(0, 10),
-                              ),
-                            ]
-                          : [
-                              const BoxShadow(
-                                color: Colors.black,
-                                blurRadius: 10,
-                                offset: Offset(0, 5),
-                              ),
-                            ],
-                    ),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: [
-                          Container(
-                            height: 320,
-                            clipBehavior: Clip.hardEdge,
-                            margin: const EdgeInsets.only(top: 10),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(20),
+                  // ---------------------- CARD ----------------------
+                  Widget card = Transform.translate(
+                    offset: Offset(0, lift),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      height: cardHeight, // 👈 MATCH HEIGHT
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.35),
+                        borderRadius: BorderRadius.circular(20),
+                        border: isCenter
+                            ? Border.all(color: TColors.primary, width: 1.5)
+                            : null,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.5),
+                            blurRadius: 30,
+                            offset: const Offset(0, 15),
+                          ),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: Stack(
+                          children: [
+                            // Image inside card
+                            Image.asset(
+                              product['image']!,
+                              width: double.infinity,
+                              height: cardHeight, // 👈 MATCH HEIGHT
+                              fit: BoxFit.cover,
                             ),
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.all(TSizes.defaultSpace),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(20),
-                                child: Image.asset(
-                                  product['image']!,
-                                  width: double.infinity,
-                                  height: 250,
-                                  fit: BoxFit.cover,
+
+                            // Cinematic gradient
+                            Container(
+                              decoration: const BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.bottomCenter,
+                                  end: Alignment.topCenter,
+                                  colors: gradientColors,
+                                  stops: [0.0, 0.25, 0.55, 1.0],
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            product['title']!,
-                            style: const TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
-                        ],
+
+                            // Title on image
+                            // Title on image (BOTTOM CENTER)
+                            Positioned(
+                              bottom: 14,
+                              left: 0,
+                              right: 0,
+                              child: Center(
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(10),
+                                  child: BackdropFilter(
+                                    filter: ImageFilter.blur(
+                                        sigmaX: 10, sigmaY: 10),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                          color: Colors.white.withOpacity(0.2),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        product['title']!,
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            )
+                          ],
+                        ),
                       ),
                     ),
                   );
 
-                  // Wrap only center card with gesture and animation
+                  // Tap animation
                   if (isCenter) {
                     card = GestureDetector(
                       onTap: () async {
-                        // Scale down briefly for click animation
                         setState(() => _scale = 0.9);
                         await Future.delayed(const Duration(milliseconds: 150));
                         setState(() => _scale = 1.0);
-                        await Future.delayed(const Duration(milliseconds: 150));
 
-                        // Navigate to NavigationMenu and pass selected index
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => NavigationMenu(
-                              initialIndex: productIndex,
-                            ),
+                            builder: (_) =>
+                                NavigationMenu(initialIndex: productIndex),
                           ),
                         );
                       },
                       child: AnimatedScale(
                         scale: _scale,
                         duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeInOut,
                         child: card,
                       ),
                     );

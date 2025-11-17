@@ -58,28 +58,114 @@ class _SectionState extends State<Section> {
     );
   }
 
+  // ---------- Helper: unwrap unified response ----------
+  /// Returns a Map with keys:
+  /// {
+  ///   "ok": bool, // http success
+  ///   "message": String,
+  ///   "data": dynamic
+  /// }
+  Map<String, dynamic> _unwrapResponse(http.Response resp) {
+    final statusOk = resp.statusCode >= 200 && resp.statusCode < 300;
+    try {
+      final decoded = jsonDecode(resp.body);
+      if (decoded is Map) {
+        // If server follows { message, data }
+        if (decoded.containsKey('data') || decoded.containsKey('message')) {
+          return {
+            "ok": statusOk,
+            "message": decoded['message']?.toString() ??
+                (statusOk ? "Success" : "Error"),
+            "data": decoded.containsKey('data')
+                ? decoded['data']
+                : (decoded['data'] ?? decoded),
+          };
+        } else {
+          // Map without keys: treat whole map as data
+          return {
+            "ok": statusOk,
+            "message": statusOk ? "Success" : "Error",
+            "data": decoded,
+          };
+        }
+      } else {
+        // decoded is not a map (e.g., list)
+        return {
+          "ok": statusOk,
+          "message": statusOk ? "Success" : "Error",
+          "data": decoded,
+        };
+      }
+    } catch (e) {
+      // body is not json or decode failed -> fallback
+      final body = resp.body.trim();
+      return {
+        "ok": statusOk,
+        "message": body.isNotEmpty ? body : (statusOk ? "Success" : "Error"),
+        "data": statusOk ? List<dynamic>.empty() : null,
+      };
+    }
+  }
+
+  // ----------------------------- FETCH STUDENTS -----------------------------
   Future<void> fetchStudents() async {
     try {
       final response = await http.get(Uri.parse(studentsApi));
-      if (response.statusCode == 200) {
-        setState(() => allStudents = jsonDecode(response.body));
+      final wrapped = _unwrapResponse(response);
+
+      if (wrapped["ok"] == true) {
+        final rawData = wrapped["data"];
+
+        // backend might return { data: [...] } OR array directly OR { students: [...] }
+        List<dynamic> studentsList = [];
+        if (rawData is List) {
+          studentsList = rawData;
+        } else if (rawData is Map && rawData.containsKey('data')) {
+          studentsList = rawData['data'] as List<dynamic>;
+        } else if (rawData is Map && rawData.containsKey('students')) {
+          studentsList = rawData['students'] as List<dynamic>;
+        } else if (rawData == null) {
+          studentsList = [];
+        } else {
+          // single object or map - try to coerce
+          studentsList = [rawData];
+        }
+
+        setState(() => allStudents = studentsList);
       } else {
-        showSnack("Failed to load students");
+        showSnack(wrapped["message"] ?? "Failed to load students");
       }
     } catch (e) {
       showSnack("Error fetching students: $e");
     }
   }
 
+  // ----------------------------- FETCH SECTIONS -----------------------------
   Future<void> fetchSections() async {
     setState(() => isLoading = true);
     try {
       final response = await http.get(Uri.parse("$sectionApi/all"));
-      if (response.statusCode == 200) {
-        final List<dynamic> rawData = jsonDecode(response.body);
+      final wrapped = _unwrapResponse(response);
+
+      if (wrapped["ok"] == true) {
+        final rawData = wrapped["data"];
+
+        List<dynamic> rawList = [];
+        if (rawData is List) {
+          rawList = rawData;
+        } else if (rawData is Map && rawData.containsKey('data')) {
+          rawList = rawData['data'] as List<dynamic>;
+        } else if (rawData == null) {
+          rawList = [];
+        } else {
+          // If backend returned a single object, put it into a list
+          rawList = [rawData];
+        }
+
         setState(() {
-          sections = rawData.map((raw) {
+          sections = rawList.map((raw) {
             final s = Map<String, dynamic>.from(raw as Map);
+
             final attendanceList = ((s["attendance"] ?? []) as List)
                 .map((a) => Map<String, dynamic>.from(a as Map))
                 .toList();
@@ -99,7 +185,7 @@ class _SectionState extends State<Section> {
           }).toList();
         });
       } else {
-        showSnack("Error loading sections: ${response.statusCode}");
+        showSnack(wrapped["message"] ?? "Error loading sections");
       }
     } catch (e) {
       showSnack("Connection error: $e");
@@ -148,10 +234,8 @@ class _SectionState extends State<Section> {
     }
   }
 
-  // create or update section
+  // ---------------- CREATE SECTION ----------------
   Future<void> createOrUpdateSection({Map<String, dynamic>? section}) async {
-    final isEdit = section != null;
-
     final teacherName = teacherController.text.trim();
     final courseName = courseController.text.trim();
     final date = selectedDate.toIso8601String().split('T')[0];
@@ -160,82 +244,48 @@ class _SectionState extends State<Section> {
     final adminRemark = adminRemarkController.text.trim();
     final students = selectedStudents;
 
-    // Validation
     if (teacherName.isEmpty ||
         courseName.isEmpty ||
         timeFrom.isEmpty ||
         timeTo.isEmpty ||
         students.isEmpty) {
-      showSnack("Please fill all required fields and select students.");
+      showSnack("Please fill all required fields & select students.");
       return;
     }
 
-    // ✅ Payload mapped correctly to backend expectations
-    final payload = isEdit
-        ? {
-            "oldTeacherName": section!["teacherName"],
-            "oldCourseName": section["courseName"],
-            "oldDate": section["date"],
-            "oldTimeFrom": section["timeFrom"],
-            "oldTimeTo": section["timeTo"],
-
-            // New values (backend expects 'newTeacherName', etc.)
-            "newTeacherName": teacherName,
-            "newCourseName": courseName,
-            "newDate": date,
-            "newTimeFrom": timeFrom,
-            "newTimeTo": timeTo,
-
-            // Updated according to backend expectation
-            "oldStudents": List<String>.from(section["students"] ?? []),
-            "newStudents": students.isNotEmpty
-                ? students
-                : List<String>.from(section["students"] ?? []),
-
-            "repeatWeekly": repeatWeekly,
-            "repeatCount": repeatCount,
-            "adminRemark": adminRemark,
-          }
-        : {
-            // Backend expects these field names
-            "teacherName": teacherName,
-            "courseName": courseName,
-            "date": date,
-            "timeFrom": timeFrom,
-            "timeTo": timeTo,
-            "students": students, // ✅ not 'studentNames'
-
-            "repeatWeekly": repeatWeekly,
-            "repeatCount": repeatCount,
-            "adminRemark": adminRemark,
-          };
-
-    final uri = isEdit ? "$sectionApi/update" : "$sectionApi/create";
-    final method = isEdit ? http.put : http.post;
-
-    print("📦 Sending payload: ${jsonEncode(payload)}");
+    final payload = {
+      "teacherName": teacherName,
+      "courseName": courseName,
+      "date": date,
+      "timeFrom": timeFrom,
+      "timeTo": timeTo,
+      "students": students,
+      "repeatWeekly": repeatWeekly,
+      "repeatCount": repeatCount,
+      "adminRemark": adminRemark,
+    };
 
     try {
-      final response = await method(
-        Uri.parse(uri),
+      final response = await http.post(
+        Uri.parse("$sectionApi/create"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(payload),
       );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
+      final wrapped = _unwrapResponse(response);
+      if (wrapped["ok"] == true) {
         Navigator.pop(context);
         await fetchSections();
-        showSnack(isEdit
-            ? "Section updated successfully"
-            : "Section created successfully");
+        showSnack(wrapped["message"] ?? "Section created successfully");
       } else {
-        showSnack("❌ Failed (${response.statusCode}): ${response.body}");
+        showSnack(wrapped["message"] ?? "Failed to create section");
       }
     } catch (e) {
-      showSnack("⚠️ Error saving section: $e");
+      showSnack("Error: $e");
     }
   }
 
+  // ---------------- DELETE SECTION ----------------
   Future<void> deleteSection(Map<String, dynamic> s) async {
     try {
       final response = await http.delete(
@@ -250,14 +300,15 @@ class _SectionState extends State<Section> {
         }),
       );
 
-      showSnack(response.body);
-      if (response.statusCode == 200) fetchSections();
+      final wrapped = _unwrapResponse(response);
+      showSnack(wrapped["message"] ?? "Deleted");
+      if (wrapped["ok"] == true) fetchSections();
     } catch (e) {
       showSnack("Error deleting section: $e");
     }
   }
 
-// ✅ MARK ATTENDANCE - via Query Params
+  // ---------------- MARK ATTENDANCE ----------------
   Future<void> markAttendance(
     String teacherName,
     String courseName,
@@ -285,18 +336,19 @@ class _SectionState extends State<Section> {
 
     try {
       final response = await http.post(uri);
+      final wrapped = _unwrapResponse(response);
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        showSnack("✅ Attendance saved for $studentName");
+      if (wrapped["ok"] == true) {
+        showSnack(wrapped["message"] ?? "Attendance saved");
       } else {
-        showSnack("❌ Failed (${response.statusCode}): ${response.body}");
+        showSnack(wrapped["message"] ?? "Failed to save attendance");
       }
     } catch (e) {
-      showSnack("⚠️ Error marking attendance: $e");
+      showSnack("Error: $e");
     }
   }
 
-// ✅ MARK ALL PRESENT - via RequestBody
+  // ---------------- MARK ALL PRESENT ----------------
   Future<void> markAllPresent(
     String teacherName,
     String courseName,
@@ -319,24 +371,98 @@ class _SectionState extends State<Section> {
     });
 
     try {
-      final response = await http.post(
-        uri,
-        headers: {"Content-Type": "application/json"},
-        body: body,
-      );
+      final response = await http.post(uri,
+          headers: {"Content-Type": "application/json"}, body: body);
+      final wrapped = _unwrapResponse(response);
 
-      if (response.statusCode == 200) {
-        showSnack("✅ All students marked present");
+      if (wrapped["ok"] == true) {
+        showSnack(wrapped["message"] ?? "All students marked present");
         fetchSections();
       } else {
-        showSnack("❌ Failed (${response.statusCode}): ${response.body}");
+        showSnack(wrapped["message"] ?? "Failed to mark all present");
       }
     } catch (e) {
-      showSnack("⚠️ Error marking all present: $e");
+      showSnack("Error: $e");
     }
   }
 
-// ✅ BEAUTIFULLY UPDATED ATTENDANCE DIALOG
+  // ---------------- UPDATE SECTION ----------------
+  Future<void> updateSectionOnly(Map<String, dynamic> section) async {
+    final payload = {
+      "teacherName": section["teacherName"],
+      "courseName": section["courseName"],
+      "date": section["date"],
+      "timeFrom": section["timeFrom"],
+      "timeTo": section["timeTo"],
+      "repeatWeekly": repeatWeekly,
+      "repeatCount": repeatCount,
+      "adminRemark": adminRemarkController.text.trim(),
+      "oldStudents": List<String>.from(section["students"] ?? []),
+      "newStudents": selectedStudents.isNotEmpty
+          ? selectedStudents
+          : List<String>.from(section["students"] ?? []),
+    };
+
+    try {
+      final res = await http.put(
+        Uri.parse("$sectionApi/update"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(payload),
+      );
+
+      final wrapped = _unwrapResponse(res);
+      if (wrapped["ok"] == true) {
+        Navigator.pop(context);
+        await fetchSections();
+        showSnack(wrapped["message"] ?? "Section updated");
+      } else {
+        showSnack(wrapped["message"] ?? "Update failed");
+      }
+    } catch (e) {
+      showSnack("Error: $e");
+    }
+  }
+
+  // ---------------- CHANGE SECTION KEY ----------------
+  Future<void> changeSectionKeyFlutter(Map<String, dynamic> section) async {
+    final payload = {
+      "oldKey": {
+        "teacherName": section["teacherName"],
+        "courseName": section["courseName"],
+        "date": section["date"],
+        "timeFrom": section["timeFrom"],
+        "timeTo": section["timeTo"],
+      },
+      "newKey": {
+        "teacherName": teacherController.text.trim(),
+        "courseName": courseController.text.trim(),
+        "date": selectedDate.toIso8601String().split('T')[0],
+        "timeFrom": _formatForBackend(timeFromController.text.trim()),
+        "timeTo": _formatForBackend(timeToController.text.trim()),
+      }
+    };
+
+    try {
+      final res = await http.put(
+        Uri.parse("$sectionApi/changeKey"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(payload),
+      );
+
+      final wrapped = _unwrapResponse(res);
+      if (wrapped["ok"] == true) {
+        Navigator.pop(context);
+        await fetchSections();
+        showSnack(wrapped["message"] ?? "Section key changed");
+      } else {
+        showSnack(wrapped["message"] ?? "Change key failed");
+      }
+    } catch (e) {
+      showSnack("Error: $e");
+    }
+  }
+
+  // ---------------- ATTENDANCE DIALOG ----------------
   void openAttendanceDialog(Map<String, dynamic> section) {
     final attendanceList = ((section["attendance"] ?? []) as List)
         .map((a) => Map<String, dynamic>.from(a as Map))
@@ -390,7 +516,7 @@ class _SectionState extends State<Section> {
                         children: [
                           Expanded(
                             child: ElevatedButton.icon(
-                              icon: const Icon(Icons.done_all, size: 18),
+                              //  icon: const Icon(Icons.done_all, size: 18),
                               label: const Text("All Present"),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: TColors.success,
@@ -418,7 +544,7 @@ class _SectionState extends State<Section> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: ElevatedButton.icon(
-                              icon: const Icon(Icons.close, size: 18),
+                              // icon: const Icon(Icons.close, size: 18),
                               label: const Text("Select None"),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: TColors.error,
@@ -542,7 +668,7 @@ class _SectionState extends State<Section> {
     );
   }
 
-  // ✅ STUDENT SELECT DIALOG
+  // STUDENT SELECT DIALOG
   Future<void> _selectStudents(
       void Function(void Function()) parentSetState) async {
     final tempSelected = List<String>.from(selectedStudents);
@@ -597,7 +723,7 @@ class _SectionState extends State<Section> {
     }
   }
 
-  // ✅ TEXTFIELD WIDGET
+  // TEXTFIELD WIDGET
   Widget _textField(TextEditingController c, String label) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: TextField(
@@ -615,8 +741,7 @@ class _SectionState extends State<Section> {
         ),
       );
 
-  // ✅ SECTION FORM (ADD/EDIT)
-  // ✅ SECTION FORM (ADD/EDIT)
+  // SECTION FORM (ADD/EDIT)
   void openSectionDialog({Map<String, dynamic>? section}) {
     final isEdit = section != null;
 
@@ -641,7 +766,7 @@ class _SectionState extends State<Section> {
       repeatCount = 0;
     }
 
-    // ✅ Sync repeatCount with controller before showing
+    // Sync repeatCount with controller before showing
     repeatCountController.text = repeatCount == 0 ? "" : repeatCount.toString();
 
     showModalBottomSheet(
@@ -659,7 +784,7 @@ class _SectionState extends State<Section> {
           ),
           child: StatefulBuilder(
             builder: (context, setState) {
-              // ✅ Keep controller updated whenever repeatCount changes
+              // Keep controller updated whenever repeatCount changes
               repeatCountController.text =
                   repeatCount == 0 ? "" : repeatCount.toString();
 
@@ -677,20 +802,66 @@ class _SectionState extends State<Section> {
                     ),
                     const SizedBox(height: TSizes.defaultSpace),
 
-                    _textField(teacherController, "Teacher Name"),
-                    _textField(courseController, "Course Name"),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: TextField(
+                        controller: teacherController,
+                        decoration: InputDecoration(
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Text("Teacher Name"),
+                              SizedBox(width: 6),
+                              Icon(Icons.key, size: 18),
+                            ],
+                          ),
+                          filled: true,
+                          fillColor: THelperFunctions.isDarkMode(context)
+                              ? TColors.dark
+                              : TColors.light,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: TextField(
+                        controller: courseController,
+                        decoration: InputDecoration(
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Text("Course Name"),
+                              SizedBox(width: 6),
+                              Icon(Icons.key, size: 18),
+                            ],
+                          ),
+                          filled: true,
+                          fillColor: THelperFunctions.isDarkMode(context)
+                              ? TColors.dark
+                              : TColors.light,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
 
                     const SizedBox(height: TSizes.spaceBtwItems),
 
-                    // 🕒 Time Pickers
+                    // Time Pickers
                     Row(
                       children: [
                         Expanded(
                           child: GestureDetector(
                             onTap: () async {
                               final picked = await showTimePicker(
-                                  context: context,
-                                  initialTime: TimeOfDay.now());
+                                context: context,
+                                initialTime: TimeOfDay.now(),
+                              );
                               if (picked != null) {
                                 setState(() {
                                   timeFromController.text =
@@ -699,7 +870,31 @@ class _SectionState extends State<Section> {
                               }
                             },
                             child: AbsorbPointer(
-                              child: _textField(timeFromController, "From"),
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8),
+                                child: TextField(
+                                  controller: timeFromController,
+                                  decoration: InputDecoration(
+                                    label: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: const [
+                                        Text("From"),
+                                        SizedBox(width: 6),
+                                        Icon(Icons.key, size: 18),
+                                      ],
+                                    ),
+                                    filled: true,
+                                    fillColor:
+                                        THelperFunctions.isDarkMode(context)
+                                            ? TColors.dark
+                                            : TColors.light,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -708,8 +903,9 @@ class _SectionState extends State<Section> {
                           child: GestureDetector(
                             onTap: () async {
                               final picked = await showTimePicker(
-                                  context: context,
-                                  initialTime: TimeOfDay.now());
+                                context: context,
+                                initialTime: TimeOfDay.now(),
+                              );
                               if (picked != null) {
                                 setState(() {
                                   timeToController.text =
@@ -718,7 +914,31 @@ class _SectionState extends State<Section> {
                               }
                             },
                             child: AbsorbPointer(
-                              child: _textField(timeToController, "To"),
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 8),
+                                child: TextField(
+                                  controller: timeToController,
+                                  decoration: InputDecoration(
+                                    label: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: const [
+                                        Text("To"),
+                                        SizedBox(width: 6),
+                                        Icon(Icons.key, size: 18),
+                                      ],
+                                    ),
+                                    filled: true,
+                                    fillColor:
+                                        THelperFunctions.isDarkMode(context)
+                                            ? TColors.dark
+                                            : TColors.light,
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -726,10 +946,35 @@ class _SectionState extends State<Section> {
                     ),
 
                     const SizedBox(height: TSizes.spaceBtwItems),
-                    _textField(adminRemarkController, "Admin Remark"),
+
+// ADMIN REMARK WITH ICON
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: TextField(
+                        controller: adminRemarkController,
+                        decoration: InputDecoration(
+                          label: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Text("Admin Remark"),
+                              SizedBox(width: 6),
+                              Icon(Icons.update, size: 18),
+                            ],
+                          ),
+                          filled: true,
+                          fillColor: THelperFunctions.isDarkMode(context)
+                              ? TColors.dark
+                              : TColors.light,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
 
                     const SizedBox(height: 15),
 
+// SELECT STUDENTS
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -743,6 +988,7 @@ class _SectionState extends State<Section> {
                                 const TextStyle(fontWeight: FontWeight.w600)),
                       ],
                     ),
+
                     Wrap(
                       spacing: 6,
                       children: selectedStudents
@@ -756,7 +1002,7 @@ class _SectionState extends State<Section> {
 
                     const Divider(height: 30),
 
-                    // 🔁 Repeat Section
+// REPEAT SECTION
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -775,23 +1021,39 @@ class _SectionState extends State<Section> {
                                 });
                               },
                             ),
-                            const Text(
-                              "Repeat Monthly",
-                              style: TextStyle(
-                                  fontSize: 16, fontWeight: FontWeight.w600),
+
+                            // LABEL WITH UPDATE ICON
+                            Row(
+                              children: const [
+                                Text(
+                                  " Repeat Monthly",
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600),
+                                ),
+                                SizedBox(width: 6),
+                                Icon(Icons.update, size: 18),
+                              ],
                             ),
                           ],
                         ),
 
                         const SizedBox(height: 10),
 
-                        // Repeat Count
+                        // REPEAT COUNT WITH ICON
                         TextField(
                           controller: repeatCountController,
                           keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(
-                            labelText: "Repeat Count (weeks)",
-                            border: OutlineInputBorder(),
+                          decoration: InputDecoration(
+                            label: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Text("Repeat Count (weeks)"),
+                                SizedBox(width: 6),
+                                Icon(Icons.update, size: 18),
+                              ],
+                            ),
+                            border: const OutlineInputBorder(),
                             isDense: true,
                           ),
                           onChanged: (val) {
@@ -805,19 +1067,55 @@ class _SectionState extends State<Section> {
 
                     const SizedBox(height: 25),
 
+                    // Buttons: Create OR (Update + Change Key)
                     Center(
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.save),
-                        label: Text(isEdit ? "Update" : "Create"),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: TColors.primary,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 40, vertical: 14),
-                        ),
-                        onPressed: () => createOrUpdateSection(
-                            section: isEdit ? section : null),
-                      ),
-                    ),
+                      child: isEdit
+                          ? Row(
+                              children: [
+                                // CHANGE KEY BUTTON (FIRST)
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    icon: const Icon(Icons.key),
+                                    label: const Text("Change Key"),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: TColors.secondary,
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                    ),
+                                    onPressed: () =>
+                                        changeSectionKeyFlutter(section!),
+                                  ),
+                                ),
+
+                                const SizedBox(width: 12),
+
+                                // UPDATE BUTTON (SECOND)
+                                Expanded(
+                                  child: ElevatedButton.icon(
+                                    icon: const Icon(Icons.update),
+                                    label: const Text("Update"),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: TColors.primary,
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                    ),
+                                    onPressed: () =>
+                                        updateSectionOnly(section!),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : ElevatedButton.icon(
+                              icon: const Icon(Icons.save),
+                              label: const Text("Create"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: TColors.primary,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 40, vertical: 14),
+                              ),
+                              onPressed: () => createOrUpdateSection(),
+                            ),
+                    )
                   ],
                 ),
               );
@@ -828,7 +1126,7 @@ class _SectionState extends State<Section> {
     );
   }
 
-  // ✅ SECTION CARD
+  // SECTION CARD
   Widget _buildSectionCard(Map<String, dynamic> s, bool darkMode) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -859,18 +1157,17 @@ class _SectionState extends State<Section> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 🕒 Time with color
+              // Time with color
               Text(
                 "${s['timeFrom']} - ${s['timeTo']}",
                 style: const TextStyle(
-                  // color: TColors.secondary,
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
                 ),
               ),
               const SizedBox(height: 4),
 
-              // 🗒️ Admin Remark
+              // Admin Remark
               Text(
                 "Admin Remark: ${s['adminRemark']?.isNotEmpty == true ? s['adminRemark'] : '-'}",
                 style: TextStyle(
@@ -880,10 +1177,10 @@ class _SectionState extends State<Section> {
               ),
               const SizedBox(height: 4),
 
-              // ✅ Present / ❌ Absent Counts (with colors)
+              // Present / Absent Counts
               Row(
                 children: [
-                  // 🟢 Present
+                  // Present
                   RichText(
                     text: TextSpan(
                       text: "Present: ",
@@ -896,7 +1193,7 @@ class _SectionState extends State<Section> {
                         TextSpan(
                           text: "${s['presentCount']}",
                           style: const TextStyle(
-                            color: TColors.third, // 🟢 only number is green
+                            color: TColors.third,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -905,7 +1202,7 @@ class _SectionState extends State<Section> {
                   ),
                   const SizedBox(width: 16),
 
-                  // 🔴 Absent
+                  // Absent
                   RichText(
                     text: TextSpan(
                       text: "Absent: ",
@@ -918,7 +1215,7 @@ class _SectionState extends State<Section> {
                         TextSpan(
                           text: "${s['absentCount']}",
                           style: const TextStyle(
-                            color: TColors.third, // 🔴 only number is red
+                            color: TColors.third,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -936,7 +1233,7 @@ class _SectionState extends State<Section> {
             if (value == 'edit') {
               openSectionDialog(section: s);
             } else if (value == 'delete') {
-              deleteSection(s);
+              confirmDeleteSection(s);
             } else if (value == 'attendance') {
               openAttendanceDialog(s);
             }
@@ -949,6 +1246,32 @@ class _SectionState extends State<Section> {
         ),
       ),
     );
+  }
+
+  Future<void> confirmDeleteSection(Map<String, dynamic> s) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Confirm Delete"),
+        content: const Text(
+            "Are you sure you want to delete this section? This action cannot be undone."),
+        actions: [
+          TextButton(
+            child: const Text("Cancel"),
+            onPressed: () => Navigator.pop(ctx, false),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: TColors.error),
+            child: const Text("Delete"),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      deleteSection(s);
+    }
   }
 
   @override

@@ -1,8 +1,10 @@
 import 'dart:ui';
+
+import 'package:Fin/features/creation/creation.dart';
 import 'package:Fin/features/fee/fee.dart';
+import 'package:Fin/features/fees%20marking/fees%20marking.dart';
 import 'package:Fin/features/sections/section.dart';
-import 'package:Fin/features/students/students.dart';
-import 'package:Fin/features/teachers/teachers.dart';
+
 import 'package:Fin/utils/constants/colors.dart';
 import 'package:Fin/utils/helpers/helper_functions.dart';
 import 'package:flutter/material.dart';
@@ -157,8 +159,8 @@ class NavigationController extends GetxController {
   NavigationController({required bool admin}) {
     screens = const [
       Section(),
-      Students(),
-      Teachers(),
+      CreationPage(),
+      FeesMarking(),
       Fee(),
     ];
   }

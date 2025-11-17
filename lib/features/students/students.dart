@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:Fin/appConfig.dart';
 import 'package:Fin/navigation.dart';
 import 'package:Fin/utils/constants/colors.dart';
-import 'package:Fin/utils/helpers/helper_functions.dart';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
@@ -25,8 +25,11 @@ class _StudentsState extends State<Students> {
   final TextEditingController courseController = TextEditingController();
 
   List<dynamic> students = [];
+  List<dynamic> inactiveStudents = [];
+
   bool isLoading = false;
   bool _initialized = false;
+  bool showInactive = false;
 
   @override
   void initState() {
@@ -43,46 +46,61 @@ class _StudentsState extends State<Students> {
     }
   }
 
-  /// ✅ Safe SnackBar method
+  // SNACKBAR
   void showSnack(String message) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
-    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
-  /// 🔹 Fetch all students
+  // FETCH ACTIVE STUDENTS (updated for backend format)
   Future<void> fetchStudents() async {
     setState(() => isLoading = true);
+
     try {
-      final response = await http.get(Uri.parse("$studentsApi/all"));
-      if (response.statusCode == 200) {
-        setState(() {
-          students = jsonDecode(response.body);
-        });
+      final res = await http.get(Uri.parse("$studentsApi/all"));
+      final json = jsonDecode(res.body);
+
+      if (res.statusCode == 200) {
+        setState(() => students = json["data"] ?? []);
       } else {
-        showSnack("Error: ${response.body}");
+        showSnack(json["message"] ?? "Error");
       }
     } catch (e) {
       showSnack("Failed to connect: $e");
-    } finally {
-      setState(() => isLoading = false);
     }
+
+    setState(() => isLoading = false);
   }
 
-  /// 🔹 Create student
+  // FETCH INACTIVE STUDENTS
+  Future<void> fetchInactiveStudents() async {
+    setState(() => isLoading = true);
+
+    try {
+      final res = await http.get(Uri.parse("$studentsApi/inactive"));
+      final json = jsonDecode(res.body);
+
+      if (res.statusCode == 200) {
+        setState(() => inactiveStudents = json["data"] ?? []);
+      } else {
+        showSnack(json["message"] ?? "Error");
+      }
+    } catch (e) {
+      showSnack("Failed to connect: $e");
+    }
+
+    setState(() => isLoading = false);
+  }
+
+  // CREATE STUDENT
   Future<void> createStudent() async {
     try {
-      final response = await http.post(
+      final res = await http.post(
         Uri.parse("$studentsApi/create"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
@@ -96,8 +114,10 @@ class _StudentsState extends State<Students> {
         }),
       );
 
-      showSnack(response.body);
-      if (response.statusCode == 201) {
+      final json = jsonDecode(res.body);
+      showSnack(json["message"]);
+
+      if (res.statusCode == 201) {
         clearFields();
         fetchStudents();
       }
@@ -106,11 +126,11 @@ class _StudentsState extends State<Students> {
     }
   }
 
-  /// 🔹 Update student
+  // UPDATE STUDENT
   Future<void> updateStudent(String originalName) async {
     try {
-      final response = await http.put(
-        Uri.parse("$studentsApi/update/$originalName"), // 👈 Path variable
+      final res = await http.put(
+        Uri.parse("$studentsApi/update/$originalName"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "studentName": nameController.text.trim(),
@@ -123,8 +143,10 @@ class _StudentsState extends State<Students> {
         }),
       );
 
-      showSnack(response.body);
-      if (response.statusCode == 200) {
+      final json = jsonDecode(res.body);
+      showSnack(json["message"]);
+
+      if (res.statusCode == 200) {
         clearFields();
         fetchStudents();
       }
@@ -133,22 +155,85 @@ class _StudentsState extends State<Students> {
     }
   }
 
-  /// 🔹 Delete student
+  // SOFT DELETE
   Future<void> deleteStudent(String studentName) async {
     try {
-      final response = await http.delete(
+      final res = await http.delete(
         Uri.parse("$studentsApi/delete"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({"studentName": studentName}),
       );
 
-      showSnack(response.body);
-      if (response.statusCode == 200) fetchStudents();
+      final json = jsonDecode(res.body);
+      showSnack(json["message"]);
+
+      if (res.statusCode == 200) {
+        fetchStudents();
+        fetchInactiveStudents();
+      }
     } catch (e) {
       showSnack("Error: $e");
     }
   }
 
+  // DELETE CONFIRM
+  Future<void> confirmDeleteStudent(String name) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Confirm Delete"),
+        content: Text("Are you sure you want to delete \"$name\"?"),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("Cancel")),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("Delete")),
+        ],
+      ),
+    );
+
+    if (confirm == true) deleteStudent(name);
+  }
+
+  // REACTIVATE STUDENT
+  Future<void> reactivateStudent(String name) async {
+    try {
+      final res = await http.put(Uri.parse("$studentsApi/reactivate/$name"));
+      final json = jsonDecode(res.body);
+      showSnack(json["message"]);
+
+      if (res.statusCode == 200) {
+        fetchInactiveStudents();
+        fetchStudents();
+      }
+    } catch (e) {
+      showSnack("Error: $e");
+    }
+  }
+
+  Future<void> confirmReactivateStudent(String name) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Reactivate Student"),
+        content: Text("Reactivate \"$name\"?"),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("Cancel")),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("Reactivate")),
+        ],
+      ),
+    );
+
+    if (confirm == true) reactivateStudent(name);
+  }
+
+  // CLEAR FIELDS
   void clearFields() {
     nameController.clear();
     phoneController.clear();
@@ -157,11 +242,11 @@ class _StudentsState extends State<Students> {
     courseController.clear();
   }
 
-  /// 🔹 Show dialog (Add / Edit)
+  // ADD / EDIT POPUP
   void showStudentDialog({Map<String, dynamic>? student}) {
-    final bool isEdit = student != null;
+    final editing = student != null;
 
-    if (isEdit) {
+    if (editing) {
       nameController.text = student["studentName"] ?? "";
       phoneController.text = student["phoneNumber"] ?? "";
       emailController.text = student["email"] ?? "";
@@ -180,7 +265,7 @@ class _StudentsState extends State<Students> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16.0),
           ),
-          title: Text(isEdit ? "Edit Student" : "Add Student"),
+          title: Text(editing ? "Edit Student" : "Add Student"),
           content: SingleChildScrollView(
             child: Column(
               children: [
@@ -194,22 +279,19 @@ class _StudentsState extends State<Students> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel")),
             ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                editing
+                    ? updateStudent(student!["studentName"])
+                    : createStudent();
+              },
               style: ButtonStyle(
                 backgroundColor: MaterialStateProperty.all(TColors.info),
               ),
-              onPressed: () {
-                Navigator.pop(context);
-                if (isEdit) {
-                  updateStudent(student["studentName"]);
-                } else {
-                  createStudent();
-                }
-              },
-              child: Text(isEdit ? "Update" : "Save"),
+              child: Text(editing ? "Update" : "Save"),
             ),
           ],
         ),
@@ -217,9 +299,7 @@ class _StudentsState extends State<Students> {
     );
   }
 
-  /// 🔹 Reusable text field
   Widget _buildTextField(TextEditingController controller, String label) {
-    final darkMode = THelperFunctions.isDarkMode(context);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: TextField(
@@ -234,10 +314,12 @@ class _StudentsState extends State<Students> {
     );
   }
 
+  // UI
   @override
   Widget build(BuildContext context) {
+    final listToShow = showInactive ? inactiveStudents : students;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final darkMode = THelperFunctions.isDarkMode(context);
+
     return Scaffold(
       extendBody: true,
       appBar: AppBar(
@@ -246,60 +328,48 @@ class _StudentsState extends State<Students> {
         automaticallyImplyLeading: false,
         actions: [
           IconButton(
+            icon: Icon(showInactive ? Icons.visibility_off : Icons.visibility),
+            onPressed: () {
+              setState(() => showInactive = !showInactive);
+              showInactive ? fetchInactiveStudents() : fetchStudents();
+            },
+          ),
+          IconButton(
             onPressed: fetchStudents,
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
-
-      /// Raised FloatingActionButton
-
-      floatingActionButtonLocation: FloatingActionButtonLocation.endDocked,
-      floatingActionButton: Obx(
-        () {
-          final controller = Get.find<NavigationController>();
-          return AnimatedPadding(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.fastEaseInToSlowEaseOut,
-            padding: EdgeInsets.only(
-              bottom: controller.isNavVisible.value
-                  ? 95.0
-                  : 17.0, // moves when nav hides
-              right: controller.isNavVisible.value ? 15 : 0,
-            ),
-            child: FloatingActionButton(
-              onPressed: () => showStudentDialog(),
-              backgroundColor: TColors.primary,
-              elevation: 6,
-              child: const Icon(Icons.add, size: 28),
-            ),
-          );
-        },
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => showStudentDialog(),
+        backgroundColor: TColors.primary,
+        elevation: 6,
+        child: const Icon(Icons.add, size: 28),
       ),
       body: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: isLoading
             ? const Center(child: CircularProgressIndicator())
             : RefreshIndicator(
-                onRefresh: fetchStudents, // 🔹 Pull-to-refresh
+                onRefresh: showInactive ? fetchInactiveStudents : fetchStudents,
                 color: Theme.of(context).colorScheme.primary,
-                child: students.isEmpty
+                child: listToShow.isEmpty
                     ? const Center(child: Text("No students found"))
                     : ListView.builder(
-                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.only(bottom: 100),
-                        itemCount: students.length,
+                        itemCount: listToShow.length,
                         itemBuilder: (context, index) {
-                          final student = students[index];
+                          final s = listToShow[index];
+
                           return AnimatedContainer(
                             duration: const Duration(milliseconds: 250),
-                            curve: Curves.easeOut,
                             margin: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(20),
                               color: isDark
-                                  ? Colors.grey[900]?.withOpacity(0.8)
+                                  ? Colors.grey[900]!.withOpacity(0.8)
                                   : Colors.white.withOpacity(0.85),
                               boxShadow: [
                                 BoxShadow(
@@ -312,17 +382,42 @@ class _StudentsState extends State<Students> {
                             child: ListTile(
                               contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 16, vertical: 10),
-                              title: Text(
-                                student["studentName"] ?? "Unknown",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 16,
-                                ),
+                              title: Row(
+                                children: [
+                                  Text(
+                                    s["studentName"] ?? "Unknown",
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: showInactive
+                                          ? TColors.error.withOpacity(0.15)
+                                          : TColors.success.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      showInactive ? "Inactive" : "Active",
+                                      style: TextStyle(
+                                        color: showInactive
+                                            ? TColors.error
+                                            : TColors.success,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  )
+                                ],
                               ),
                               subtitle: Padding(
                                 padding: const EdgeInsets.only(top: 6),
                                 child: Text(
-                                  "Courses: ${(student["coursesPre"] as List?)?.join(', ') ?? 'N/A'}",
+                                  "Courses: ${(s["coursesPre"] as List?)?.join(', ') ?? 'N/A'}",
                                   style: TextStyle(
                                     color: isDark
                                         ? Colors.white70
@@ -333,18 +428,27 @@ class _StudentsState extends State<Students> {
                               trailing: Wrap(
                                 spacing: 8,
                                 children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit,
-                                        color: TColors.info),
-                                    onPressed: () =>
-                                        showStudentDialog(student: student),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete,
-                                        color: TColors.error),
-                                    onPressed: () =>
-                                        deleteStudent(student["studentName"]),
-                                  ),
+                                  if (!showInactive) ...[
+                                    IconButton(
+                                      icon: const Icon(Icons.edit,
+                                          color: TColors.info),
+                                      onPressed: () =>
+                                          showStudentDialog(student: s),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete,
+                                          color: TColors.error),
+                                      onPressed: () => confirmDeleteStudent(
+                                          s["studentName"]),
+                                    ),
+                                  ] else ...[
+                                    IconButton(
+                                      icon: const Icon(Icons.refresh,
+                                          color: Colors.green),
+                                      onPressed: () => confirmReactivateStudent(
+                                          s["studentName"]),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),

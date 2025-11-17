@@ -6,7 +6,6 @@ import 'package:Fin/utils/constants/colors.dart';
 import 'package:Fin/utils/helpers/helper_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:get/get_state_manager/src/rx_flutter/rx_obx_widget.dart';
 import 'package:http/http.dart' as http;
 
 class Teachers extends StatefulWidget {
@@ -26,8 +25,11 @@ class _TeachersState extends State<Teachers> {
   final TextEditingController courseController = TextEditingController();
 
   List<dynamic> teachers = [];
+  List<dynamic> inactiveTeachers = [];
+
   bool isLoading = false;
   bool _initialized = false;
+  bool showInactive = false;
 
   @override
   void initState() {
@@ -45,44 +47,52 @@ class _TeachersState extends State<Teachers> {
   }
 
   void showSnack(String message) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(message),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
-      }
-    });
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
   }
 
-  /// 🔹 Fetch all teachers
+  // ================= FETCH ACTIVE =================
   Future<void> fetchTeachers() async {
     setState(() => isLoading = true);
     try {
-      final response = await http.get(Uri.parse("$teacherApi/all"));
-      if (response.statusCode == 200) {
-        setState(() {
-          teachers = jsonDecode(response.body);
-        });
+      final res = await http.get(Uri.parse("$teacherApi/all"));
+      final json = jsonDecode(res.body);
+
+      if (res.statusCode == 200) {
+        setState(() => teachers = json["data"] ?? []);
       } else {
-        showSnack("Error: ${response.body}");
+        showSnack(json["message"]);
       }
     } catch (e) {
       showSnack("Failed to connect: $e");
-    } finally {
-      setState(() => isLoading = false);
     }
+    setState(() => isLoading = false);
   }
 
-  /// 🔹 Create teacher
+  // ================= FETCH INACTIVE =================
+  Future<void> fetchInactiveTeachers() async {
+    setState(() => isLoading = true);
+    try {
+      final res = await http.get(Uri.parse("$teacherApi/inactive"));
+      final json = jsonDecode(res.body);
+
+      if (res.statusCode == 200) {
+        setState(() => inactiveTeachers = json["data"] ?? []);
+      } else {
+        showSnack(json["message"]);
+      }
+    } catch (e) {
+      showSnack("Failed to connect: $e");
+    }
+    setState(() => isLoading = false);
+  }
+
+  // ================= CREATE =================
   Future<void> createTeacher() async {
     try {
-      final response = await http.post(
+      final res = await http.post(
         Uri.parse("$teacherApi/create"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
@@ -96,8 +106,10 @@ class _TeachersState extends State<Teachers> {
         }),
       );
 
-      showSnack(response.body);
-      if (response.statusCode == 201) {
+      final json = jsonDecode(res.body);
+      showSnack(json["message"]);
+
+      if (res.statusCode == 201) {
         clearFields();
         fetchTeachers();
       }
@@ -106,10 +118,10 @@ class _TeachersState extends State<Teachers> {
     }
   }
 
-  /// 🔹 Update teacher
+  // ================= UPDATE =================
   Future<void> updateTeacher(String originalName) async {
     try {
-      final response = await http.put(
+      final res = await http.put(
         Uri.parse("$teacherApi/update/$originalName"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
@@ -123,8 +135,10 @@ class _TeachersState extends State<Teachers> {
         }),
       );
 
-      showSnack(response.body);
-      if (response.statusCode == 200) {
+      final json = jsonDecode(res.body);
+      showSnack(json["message"]);
+
+      if (res.statusCode == 200) {
         clearFields();
         fetchTeachers();
       }
@@ -133,22 +147,86 @@ class _TeachersState extends State<Teachers> {
     }
   }
 
-  /// 🔹 Delete teacher
-  Future<void> deleteTeacher(String teacherName) async {
+  // ================= DELETE =================
+  Future<void> deleteTeacher(String name) async {
     try {
-      final response = await http.delete(
+      final res = await http.delete(
         Uri.parse("$teacherApi/delete"),
         headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"teacherName": teacherName}),
+        body: jsonEncode({"teacherName": name}),
       );
 
-      showSnack(response.body);
-      if (response.statusCode == 200) fetchTeachers();
+      final json = jsonDecode(res.body);
+      showSnack(json["message"]);
+
+      if (res.statusCode == 200) {
+        fetchTeachers();
+        fetchInactiveTeachers();
+      }
     } catch (e) {
       showSnack("Error: $e");
     }
   }
 
+  // CONFIRM DELETE
+  Future<void> confirmDeleteTeacher(String name) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Confirm Delete"),
+        content: Text("Delete \"$name\"?"),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("Cancel")),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("Delete")),
+        ],
+      ),
+    );
+
+    if (confirm == true) deleteTeacher(name);
+  }
+
+  // ================= REACTIVATE =================
+  Future<void> reactivateTeacher(String name) async {
+    try {
+      final res = await http.put(Uri.parse("$teacherApi/reactivate/$name"));
+      final json = jsonDecode(res.body);
+
+      showSnack(json["message"]);
+
+      if (res.statusCode == 200) {
+        fetchTeachers();
+        fetchInactiveTeachers();
+      }
+    } catch (e) {
+      showSnack("Error: $e");
+    }
+  }
+
+  Future<void> confirmReactivateTeacher(String name) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Reactivate Teacher"),
+        content: Text("Reactivate \"$name\"?"),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text("Cancel")),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text("Reactivate")),
+        ],
+      ),
+    );
+
+    if (confirm == true) reactivateTeacher(name);
+  }
+
+  // CLEAR FIELDS
   void clearFields() {
     nameController.clear();
     phoneController.clear();
@@ -157,15 +235,15 @@ class _TeachersState extends State<Teachers> {
     courseController.clear();
   }
 
-  /// 🔹 Show dialog (Add/Edit)
+  // FORM POPUP
   void showTeacherDialog({Map<String, dynamic>? teacher}) {
-    final bool isEdit = teacher != null;
+    final editing = teacher != null;
 
-    if (isEdit) {
-      nameController.text = teacher["teacherName"] ?? "";
-      phoneController.text = teacher["phoneNumber"] ?? "";
-      emailController.text = teacher["email"] ?? "";
-      ageController.text = "${teacher["age"] ?? ""}";
+    if (editing) {
+      nameController.text = teacher["teacherName"];
+      phoneController.text = teacher["phoneNumber"];
+      emailController.text = teacher["email"];
+      ageController.text = teacher["age"].toString();
       courseController.text =
           (teacher["coursesTea"] as List?)?.join(", ") ?? "";
     } else {
@@ -177,39 +255,32 @@ class _TeachersState extends State<Teachers> {
       builder: (_) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
         child: AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16.0),
-          ),
-          title: Text(isEdit ? "Edit Teacher" : "Add Teacher"),
+          title: Text(editing ? "Edit Teacher" : "Add Teacher"),
           content: SingleChildScrollView(
             child: Column(
               children: [
-                _buildTextField(nameController, "Name"),
-                _buildTextField(phoneController, "Phone"),
-                _buildTextField(emailController, "Email"),
-                _buildTextField(ageController, "Age"),
-                _buildTextField(courseController, "Courses (comma separated)"),
+                _field(nameController, "Name"),
+                _field(phoneController, "Phone"),
+                _field(emailController, "Email"),
+                _field(ageController, "Age"),
+                _field(courseController, "Courses (comma separated)"),
               ],
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Cancel"),
-            ),
+                onPressed: () => Navigator.pop(context),
+                child: const Text("Cancel")),
             ElevatedButton(
               style: ButtonStyle(
-                backgroundColor: MaterialStateProperty.all(TColors.info),
-              ),
+                  backgroundColor: MaterialStateProperty.all(TColors.info)),
               onPressed: () {
                 Navigator.pop(context);
-                if (isEdit) {
-                  updateTeacher(teacher["teacherName"]);
-                } else {
-                  createTeacher();
-                }
+                editing
+                    ? updateTeacher(teacher!["teacherName"])
+                    : createTeacher();
               },
-              child: Text(isEdit ? "Update" : "Save"),
+              child: Text(editing ? "Update" : "Save"),
             ),
           ],
         ),
@@ -217,23 +288,21 @@ class _TeachersState extends State<Teachers> {
     );
   }
 
-  Widget _buildTextField(TextEditingController controller, String label) {
+  Widget _field(TextEditingController c, String label) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: TextField(
-        controller: controller,
-        decoration: InputDecoration(
-          labelText: label,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
+        controller: c,
+        decoration:
+            InputDecoration(labelText: label, border: OutlineInputBorder()),
       ),
     );
   }
 
+  // ================= UI =================
   @override
   Widget build(BuildContext context) {
+    final list = showInactive ? inactiveTeachers : teachers;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -244,59 +313,47 @@ class _TeachersState extends State<Teachers> {
         automaticallyImplyLeading: false,
         actions: [
           IconButton(
+            icon: Icon(showInactive ? Icons.visibility_off : Icons.visibility),
+            onPressed: () {
+              setState(() => showInactive = !showInactive);
+              showInactive ? fetchInactiveTeachers() : fetchTeachers();
+            },
+          ),
+          IconButton(
             onPressed: fetchTeachers,
             icon: const Icon(Icons.refresh),
           ),
         ],
       ),
-
-      /// Raised FloatingActionButton
-      ///
-      floatingActionButtonLocation: FloatingActionButtonLocation.endDocked,
-      floatingActionButton: Obx(
-        () {
-          final controller = Get.find<NavigationController>();
-          return AnimatedPadding(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.fastEaseInToSlowEaseOut,
-            padding: EdgeInsets.only(
-              bottom: controller.isNavVisible.value
-                  ? 95.0
-                  : 17.0, // moves when nav hides
-              right: controller.isNavVisible.value ? 15 : 0,
-            ),
-            child: FloatingActionButton(
-              onPressed: () => showTeacherDialog(),
-              backgroundColor: TColors.primary,
-              elevation: 6,
-              child: const Icon(Icons.add, size: 28),
-            ),
-          );
-        },
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => showTeacherDialog(),
+        backgroundColor: TColors.primary,
+        elevation: 6,
+        child: const Icon(Icons.add, size: 28),
       ),
       body: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: isLoading
             ? const Center(child: CircularProgressIndicator())
             : RefreshIndicator(
-                onRefresh: fetchTeachers,
-                child: teachers.isEmpty
+                onRefresh: showInactive ? fetchInactiveTeachers : fetchTeachers,
+                child: list.isEmpty
                     ? const Center(child: Text("No teachers found"))
                     : ListView.builder(
-                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.only(bottom: 100),
-                        itemCount: teachers.length,
-                        itemBuilder: (context, index) {
-                          final teacher = teachers[index];
+                        itemCount: list.length,
+                        itemBuilder: (_, i) {
+                          final t = list[i];
+
                           return AnimatedContainer(
                             duration: const Duration(milliseconds: 250),
-                            curve: Curves.easeOut,
                             margin: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(20),
                               color: isDark
-                                  ? Colors.grey[900]?.withOpacity(0.8)
+                                  ? Colors.grey[900]!.withOpacity(0.8)
                                   : Colors.white.withOpacity(0.85),
                               boxShadow: [
                                 BoxShadow(
@@ -309,17 +366,40 @@ class _TeachersState extends State<Teachers> {
                             child: ListTile(
                               contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 16, vertical: 10),
-                              title: Text(
-                                teacher["teacherName"] ?? "Unknown",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 16,
-                                ),
+                              title: Row(
+                                children: [
+                                  Text(
+                                    t["teacherName"],
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: showInactive
+                                          ? TColors.error.withOpacity(0.15)
+                                          : TColors.success.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Text(
+                                      showInactive ? "Inactive" : "Active",
+                                      style: TextStyle(
+                                          color: showInactive
+                                              ? TColors.error
+                                              : TColors.success,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold),
+                                    ),
+                                  ),
+                                ],
                               ),
                               subtitle: Padding(
                                 padding: const EdgeInsets.only(top: 6),
                                 child: Text(
-                                  "Courses: ${(teacher["coursesTea"] as List?)?.join(', ') ?? 'N/A'}",
+                                  "Courses: ${(t["coursesTea"] as List?)?.join(', ') ?? 'N/A'}",
                                   style: TextStyle(
                                     color: isDark
                                         ? Colors.white70
@@ -327,23 +407,30 @@ class _TeachersState extends State<Teachers> {
                                   ),
                                 ),
                               ),
-                              trailing: Wrap(
-                                spacing: 8,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(Icons.edit,
-                                        color: TColors.info),
-                                    onPressed: () =>
-                                        showTeacherDialog(teacher: teacher),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete,
-                                        color: TColors.error),
-                                    onPressed: () =>
-                                        deleteTeacher(teacher["teacherName"]),
-                                  ),
-                                ],
-                              ),
+                              trailing: showInactive
+                                  ? IconButton(
+                                      icon: const Icon(Icons.refresh,
+                                          color: Colors.green),
+                                      onPressed: () => confirmReactivateTeacher(
+                                          t["teacherName"]),
+                                    )
+                                  : Wrap(
+                                      spacing: 8,
+                                      children: [
+                                        IconButton(
+                                          icon: const Icon(Icons.edit,
+                                              color: TColors.info),
+                                          onPressed: () =>
+                                              showTeacherDialog(teacher: t),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete,
+                                              color: TColors.error),
+                                          onPressed: () => confirmDeleteTeacher(
+                                              t["teacherName"]),
+                                        ),
+                                      ],
+                                    ),
                             ),
                           );
                         },
