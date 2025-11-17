@@ -1,10 +1,10 @@
 import 'dart:convert';
 import 'dart:ui';
-import 'package:Fin/appConfig.dart';
-import 'package:Fin/navigation.dart';
+import 'package:Fin/utils/http/appconfig.dart';
+
 import 'package:Fin/utils/constants/colors.dart';
 import 'package:flutter/material.dart';
-import 'package:get/get.dart';
+
 import 'package:http/http.dart' as http;
 
 class CoursesPage extends StatefulWidget {

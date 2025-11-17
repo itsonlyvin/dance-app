@@ -2,7 +2,7 @@ import 'dart:ui';
 
 import 'package:Fin/features/creation/creation.dart';
 import 'package:Fin/features/fee/fee.dart';
-import 'package:Fin/features/fees%20marking/fees%20marking.dart';
+import 'package:Fin/features/fees%20marking/fees_marking.dart';
 import 'package:Fin/features/sections/section.dart';
 
 import 'package:Fin/utils/constants/colors.dart';
