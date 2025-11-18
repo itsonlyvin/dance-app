@@ -1,6 +1,8 @@
 import 'dart:convert';
-import 'package:Fin/utils/http/appconfig.dart';
+import 'dart:ui';
 import 'package:Fin/utils/constants/colors.dart';
+import 'package:Fin/utils/constants/sizes.dart';
+import 'package:Fin/utils/http/appconfig.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -24,7 +26,7 @@ class _FeeState extends State<Fee> {
 
   List<dynamic> students = [];
   List<dynamic> monthlyFees = [];
-  Map<String, dynamic>? studentFee;
+  Map<String, dynamic>? summary;
 
   bool isLoading = false;
 
@@ -32,7 +34,6 @@ class _FeeState extends State<Fee> {
   void initState() {
     super.initState();
 
-    /// PRE-SELECT CURRENT MONTH & YEAR
     DateTime now = DateTime.now();
     selectedYear = now.year;
     selectedMonth = now.month;
@@ -42,48 +43,46 @@ class _FeeState extends State<Fee> {
     fetchStudents();
   }
 
-  // -------- SNACK --------
+  // ************** SNACKBAR (same as Students page) **************
   void showSnack(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
-  // -------- UNIFIED BACKEND RESPONSE PARSER --------
+  // ************** UNWRAP RESPONSE **************
   Map<String, dynamic> unwrap(http.Response res) {
     final ok = res.statusCode >= 200 && res.statusCode < 300;
 
     try {
       final decoded = jsonDecode(res.body);
 
-      if (decoded is Map) {
-        return {
-          "ok": ok,
-          "message":
-              decoded["message"]?.toString() ?? (ok ? "Success" : "Error"),
-          "data": decoded["data"]
-        };
-      }
-
-      if (decoded is List) {
-        return {"ok": ok, "message": ok ? "Success" : "Error", "data": decoded};
-      }
-
-      return {"ok": ok, "message": res.body, "data": null};
-    } catch (_) {
-      return {"ok": ok, "message": res.body, "data": null};
+      return {
+        "ok": ok,
+        "message": decoded["message"]?.toString() ?? "",
+        "data": decoded["data"],
+      };
+    } catch (e) {
+      return {
+        "ok": ok,
+        "message": res.body,
+        "data": null,
+      };
     }
   }
 
-  // -------- FETCH STUDENTS --------
+  // ************** FETCH STUDENTS **************
   Future<void> fetchStudents() async {
     try {
       final res = await http.get(Uri.parse(studentsApi));
       final json = unwrap(res);
 
-      if (json["ok"] == true) {
-        final raw = json["data"];
-        setState(() => students = raw is List ? raw : []);
+      if (json["ok"]) {
+        setState(() => students = json["data"] ?? []);
       } else {
         showSnack(json["message"]);
       }
@@ -92,7 +91,7 @@ class _FeeState extends State<Fee> {
     }
   }
 
-  // -------- GENERATE FEES --------
+  // ************** GENERATE FEES **************
   Future<void> generateFees() async {
     if (selectedYear == null || selectedMonth == null) {
       showSnack("Select Year & Month");
@@ -102,8 +101,9 @@ class _FeeState extends State<Fee> {
     setState(() => isLoading = true);
 
     try {
-      final url = "$feeApi/generate?year=$selectedYear&month=$selectedMonth";
-      final res = await http.post(Uri.parse(url));
+      final res = await http.post(
+        Uri.parse("$feeApi/generate?year=$selectedYear&month=$selectedMonth"),
+      );
 
       final json = unwrap(res);
       showSnack(json["message"]);
@@ -114,7 +114,7 @@ class _FeeState extends State<Fee> {
     setState(() => isLoading = false);
   }
 
-  // -------- MONTHLY STATUS --------
+  // ************** FETCH MONTHLY STATUS **************
   Future<void> fetchMonthlyStatus() async {
     if (selectedYear == null || selectedMonth == null) {
       showSnack("Select Year & Month");
@@ -124,14 +124,13 @@ class _FeeState extends State<Fee> {
     setState(() => isLoading = true);
 
     try {
-      final url = "$feeApi/status?year=$selectedYear&month=$selectedMonth";
-      final res = await http.get(Uri.parse(url));
+      final res = await http.get(
+        Uri.parse("$feeApi/status?year=$selectedYear&month=$selectedMonth"),
+      );
 
       final json = unwrap(res);
-
-      if (json["ok"] == true) {
-        final raw = json["data"];
-        setState(() => monthlyFees = raw is List ? raw : []);
+      if (json["ok"]) {
+        setState(() => monthlyFees = json["data"] ?? []);
       }
 
       showSnack(json["message"]);
@@ -142,25 +141,28 @@ class _FeeState extends State<Fee> {
     setState(() => isLoading = false);
   }
 
-  // -------- INDIVIDUAL STUDENT FEE --------
-  Future<void> fetchStudentFee() async {
+  // ************** FETCH SUMMARY REPORT **************
+  Future<void> fetchSummary() async {
     if (selectedStudent == null ||
         selectedYear == null ||
         selectedMonth == null) {
-      showSnack("Select Student, Year & Month");
+      showSnack("Select student year month");
       return;
     }
 
     setState(() => isLoading = true);
 
     try {
-      final url =
-          "$feeApi/student?name=$selectedStudent&year=$selectedYear&month=$selectedMonth";
+      final res = await http.get(Uri.parse(
+          "$feeApi/student/$selectedStudent/$selectedYear/$selectedMonth"));
 
-      final res = await http.get(Uri.parse(url));
       final json = unwrap(res);
 
-      setState(() => studentFee = json["ok"] ? json["data"] : null);
+      if (json["ok"]) {
+        setState(() => summary = json["data"]);
+      } else {
+        setState(() => summary = null);
+      }
 
       showSnack(json["message"]);
     } catch (e) {
@@ -170,112 +172,22 @@ class _FeeState extends State<Fee> {
     setState(() => isLoading = false);
   }
 
-  // -------- ADJUST FEE --------
-  Future<void> adjustFee(Map<String, dynamic> fee) async {
-    final TextEditingController discount = TextEditingController();
-    final TextEditingController penalty = TextEditingController();
-    final TextEditingController remarks = TextEditingController();
-    bool paid = fee["paid"] ?? false;
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: Theme.of(context).dialogBackgroundColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text("Adjust Fee (${fee["studentName"]})"),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _numberField(discount, "Discount"),
-              _numberField(penalty, "Penalty"),
-              TextField(
-                controller: remarks,
-                decoration: const InputDecoration(labelText: "Remarks"),
-              ),
-              const SizedBox(height: 10),
-              StatefulBuilder(
-                builder: (context, setStateSB) => CheckboxListTile(
-                  value: paid,
-                  title: const Text("Mark as Paid"),
-                  onChanged: (v) => setStateSB(() => paid = v!),
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-            ),
-            onPressed: () async {
-              Navigator.pop(context);
-
-              try {
-                final url =
-                    "$feeApi/adjust?studentName=${fee["studentName"]}&year=${fee["year"]}&month=${fee["month"]}"
-                    "&discount=${discount.text}&penalty=${penalty.text}&paid=$paid&remarks=${remarks.text}";
-
-                final res = await http.put(Uri.parse(url));
-                final json = unwrap(res);
-
-                showSnack(json["message"]);
-                fetchMonthlyStatus();
-              } catch (e) {
-                showSnack("Error: $e");
-              }
-            },
-            child: const Text("Save"),
-          )
-        ],
-      ),
-    );
-  }
-
-  // -------- UI HELPERS --------
-  Widget _numberField(TextEditingController c, String label) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: TextField(
-        controller: c,
-        keyboardType: TextInputType.number,
-        style: Theme.of(context).textTheme.bodyMedium,
-        decoration: InputDecoration(
-          labelText: label,
-          filled: true,
-          fillColor: Theme.of(context).colorScheme.surfaceVariant,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      ),
-    );
-  }
-
+  // ************** UI HELPER WIDGETS **************
   Widget _dropdown<T>({
     required String label,
     required T? value,
     required List<T> items,
     required void Function(T?) onChanged,
   }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceVariant,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Theme.of(context).dividerColor),
-      ),
-      child: DropdownButton<T>(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: DropdownButtonFormField<T>(
         value: value,
         isExpanded: true,
-        dropdownColor: Theme.of(context).colorScheme.surfaceVariant,
-        iconEnabledColor: Theme.of(context).colorScheme.onSurface,
-        style: Theme.of(context).textTheme.bodyMedium,
-        underline: const SizedBox(),
-        hint: Text(label),
+        decoration: InputDecoration(
+          labelText: label,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        ),
         items: items
             .map((e) => DropdownMenuItem(value: e, child: Text("$e")))
             .toList(),
@@ -284,155 +196,224 @@ class _FeeState extends State<Fee> {
     );
   }
 
-  // ---------------- PAGE UI ---------------------
+  // ************** PAGE UI **************
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Stack(
       children: [
         Scaffold(
           appBar: AppBar(
             title: const Text("Fees"),
             centerTitle: true,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: fetchStudents,
+              ),
+            ],
           ),
-          body: Padding(
-            padding: const EdgeInsets.all(16),
-            child: ListView(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: _dropdown<int>(
-                        label: "Select Year",
-                        value: selectedYear,
-                        items: years,
-                        onChanged: (v) => setState(() => selectedYear = v),
+          body: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: ListView(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _dropdown(
+                            label: "Year",
+                            value: selectedYear,
+                            items: years,
+                            onChanged: (v) => setState(() => selectedYear = v)),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _dropdown<int>(
-                        label: "Select Month",
-                        value: selectedMonth,
-                        items: months,
-                        onChanged: (v) => setState(() => selectedMonth = v),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _dropdown(
+                            label: "Month",
+                            value: selectedMonth,
+                            items: months,
+                            onChanged: (v) =>
+                                setState(() => selectedMonth = v)),
                       ),
+                    ],
+                  ),
+
+                  ElevatedButton(
+                      onPressed: generateFees,
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: TColors.primary),
+                      child: const Text("Generate Monthly Fees")),
+                  const SizedBox(height: TSizes.spaceBtwItems),
+
+                  ElevatedButton(
+                      onPressed: fetchMonthlyStatus,
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: TColors.info),
+                      child: const Text("View Monthly Status")),
+                  const SizedBox(height: TSizes.spaceBtwItems),
+
+                  // ************** MONTHLY FEES LIST **************
+                  ExpansionTile(
+                    title: const Text(
+                      "Monthly Fees",
+                      style: TextStyle(fontWeight: FontWeight.bold),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: TColors.primary,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                    children: [
+                      if (monthlyFees.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Text("No fee records found"),
+                        )
+                      else
+                        ...monthlyFees.map((f) => _feeCard(f, isDark)),
+                    ],
                   ),
-                  icon: const Icon(Icons.auto_fix_high),
-                  onPressed: generateFees,
-                  label: const Text("Generate Monthly Fees"),
-                ),
-                const SizedBox(height: 8),
-                ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                  ),
-                  icon: const Icon(Icons.list_alt),
-                  onPressed: fetchMonthlyStatus,
-                  label: const Text("View Monthly Status"),
-                ),
-                const SizedBox(height: 20),
-                ExpansionTile(
-                  title: const Text(
-                    "Monthly Fees",
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  children: [
-                    if (monthlyFees.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.all(16),
-                        child: Text("No monthly fee records found."),
-                      )
-                    else
-                      ...monthlyFees.map((f) => _feeCard(f)).toList(),
-                  ],
-                ),
-                const Divider(height: 40, thickness: 1),
-                ExpansionTile(
-                  title: const Text(
-                    "Student Fee Details",
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  children: [
-                    _dropdown<String>(
-                      label: "Select Student",
-                      value: selectedStudent,
-                      items: students
-                          .map<String>((s) => s["studentName"])
-                          .toList(),
-                      onChanged: (v) => setState(() => selectedStudent = v),
-                    ),
-                    const SizedBox(height: 10),
-                    ElevatedButton(
-                      onPressed: fetchStudentFee,
-                      child: const Text("View Student Fee Details"),
-                    ),
-                    if (studentFee != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 12),
-                        child: _feeCard(studentFee!, showAdjust: false),
+
+                  const SizedBox(height: TSizes.spaceBtwItems),
+
+                  // ************** SUMMARY REPORT **************
+                  ExpansionTile(
+                    title: const Text("Student Monthly Summary",
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    children: [
+                      _dropdown(
+                        label: "Select Student",
+                        value: selectedStudent,
+                        items: students
+                            .map<String>((s) => s["studentName"])
+                            .toList(),
+                        onChanged: (v) => setState(() => selectedStudent = v),
                       ),
-                  ],
-                ),
-              ],
+                      ElevatedButton(
+                          onPressed: fetchSummary,
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: TColors.success),
+                          child: const Text("View Summary")),
+                      if (summary != null) _summaryCard(summary!, isDark),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
         if (isLoading)
           Container(
-            color: Colors.black38,
+            color: Colors.black26,
             child: const Center(child: CircularProgressIndicator()),
-          )
+          ),
       ],
     );
   }
 
-  // -------- Fee Card --------
-  Widget _feeCard(dynamic f, {bool showAdjust = true}) {
+  // ************** MONTHLY FEE CARD (same UI style as Students page) **************
+  Widget _feeCard(dynamic f, bool isDark) {
     bool paid = f["paid"] ?? false;
 
-    return Card(
-      elevation: 3,
-      color: Theme.of(context).cardColor,
+    String hours = "";
+    if (f["totalHours"] != null) hours = "${f["totalHours"]} hrs";
+    if (f["totalHoursStudied"] != null) hours = "${f["totalHoursStudied"]} hrs";
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
       margin: const EdgeInsets.symmetric(vertical: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        color: isDark ? Colors.grey[900]!.withOpacity(0.8) : Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 6,
+            offset: const Offset(0, 3),
+          )
+        ],
+      ),
       child: ListTile(
-        leading: CircleAvatar(
-          radius: 20,
-          backgroundColor: paid ? Colors.green : Colors.red,
-          child: Icon(
-            paid ? Icons.check : Icons.close,
-            color: Colors.white,
+        title: Text("${f["studentName"]} • $hours",
+            style: const TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: Text("Amount: ₹${f["finalAmount"]}"),
+        trailing: Chip(
+          label: Text(
+            paid ? "PAID" : "UNPAID",
+            style: TextStyle(
+                color: paid ? Colors.green[900] : Colors.red[900],
+                fontWeight: FontWeight.bold),
           ),
+          backgroundColor: paid
+              ? Colors.green.withOpacity(0.2)
+              : Colors.red.withOpacity(0.2),
         ),
-        contentPadding: const EdgeInsets.all(12),
-        title: Text(
-          "${f["studentName"]} • ${f["totalHours"]} hrs",
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        subtitle: Text(
-          "Final Amount: ₹${f["finalAmount"]}",
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-        trailing: showAdjust
-            ? IconButton(
-                icon: const Icon(Icons.settings),
-                color: Theme.of(context).iconTheme.color,
-                onPressed: () => adjustFee(f),
-              )
-            : null,
+      ),
+    );
+  }
+
+  // ************** SUMMARY CARD **************
+  Widget _summaryCard(Map<String, dynamic> s, bool isDark) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      margin: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: isDark ? Colors.grey[900]!.withOpacity(0.8) : Colors.white,
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 4))
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(s["studentName"],
+              style:
+                  const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          _row("Total Sections", s["totalSectionsAvailable"].toString()),
+          _row("Present", s["sectionsPresent"].toString()),
+          _row("Absent", s["sectionsAbsent"].toString()),
+          _row("Hours Studied", s["totalHoursStudied"].toString()),
+          const Divider(),
+          _row("Total Fee", "₹${s["totalFee"]}"),
+          _row("Discount", "₹${s["discount"]}"),
+          _row("Penalty", "₹${s["penalty"]}"),
+          _row("Final Amount", "₹${s["finalAmount"]}"),
+          const Divider(),
+          Row(
+            children: [
+              const Text("Status: ", style: TextStyle(fontSize: 16)),
+              Chip(
+                backgroundColor: s["paid"]
+                    ? Colors.green.withOpacity(0.2)
+                    : Colors.red.withOpacity(0.2),
+                label: Text(
+                  s["paid"] ? "PAID" : "UNPAID",
+                  style: TextStyle(
+                    color: s["paid"] ? Colors.green[900] : Colors.red[900],
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _row(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
       ),
     );
   }

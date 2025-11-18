@@ -17,9 +17,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   double _scale = 1.0;
 
   final List<Map<String, String>> _products = [
-    {'title': 'Section', 'image': TImages.og02, 'image1': TImages.og01},
-    {'title': 'Students', 'image': TImages.og03, 'image1': TImages.og04},
-    {'title': 'Teachers', 'image': TImages.og08, 'image1': TImages.og09},
+    {'title': 'Section', 'image': TImages.logodark, 'image1': TImages.og01},
+    {'title': 'Create', 'image': TImages.og03, 'image1': TImages.og04},
+    {'title': 'Attendance', 'image': TImages.og09, 'image1': TImages.og08},
     {'title': 'Fees', 'image': TImages.og05, 'image1': TImages.og06},
   ];
 

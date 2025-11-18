@@ -638,7 +638,6 @@ class _SectionState extends State<Section> {
                     setState(() => isSaving = false);
                     Navigator.pop(context);
                     fetchSections();
-                    showSnack("✅ Attendance updated successfully!");
                   },
                 ),
               ],

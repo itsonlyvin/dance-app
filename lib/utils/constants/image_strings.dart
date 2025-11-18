@@ -5,18 +5,19 @@ class TImages {
   // -- Main Home Screen
 
   static const String logo = "assets/images/og_creation/logo.png";
+  static const String logodark = "assets/images/og_creation/logodarkmode.jpg";
 
-  static const String og01 = "assets/images/og_creation/d1.jpeg";
-  static const String og02 = "assets/images/og_creation/d2.jpeg";
-  static const String og03 = "assets/images/og_creation/f1.jpeg";
-  static const String og04 = "assets/images/og_creation/f2.jpeg";
-  static const String og05 = "assets/images/og_creation/j1.jpeg";
-  static const String og06 = "assets/images/og_creation/j2.jpeg";
-  static const String og07 = "assets/images/og_creation/j3.jpeg";
-  static const String og08 = "assets/images/og_creation/s1.jpeg";
-  static const String og09 = "assets/images/og_creation/s2.jpeg";
-  static const String og11 = "assets/images/og_creation/s3.jpeg";
-  static const String og12 = "assets/images/og_creation/s4.jpeg";
+  static const String og01 = "assets/images/og_creation/d1.jpg";
+
+  static const String og03 = "assets/images/og_creation/f1.jpg";
+  static const String og04 = "assets/images/og_creation/f2.jpg";
+  static const String og05 = "assets/images/og_creation/j1.jpg";
+  static const String og06 = "assets/images/og_creation/j2.jpg";
+
+  static const String og08 = "assets/images/og_creation/s1.jpg";
+  static const String og09 = "assets/images/og_creation/s2.jpg";
+  // static const String og11 = "assets/images/og_creation/s3.jpg";
+  // static const String og12 = "assets/images/og_creation/s4.jpg";
 
   // -- App Logos
   static const String darkAppLogo =
