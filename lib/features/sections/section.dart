@@ -19,16 +19,20 @@ class Section extends StatefulWidget {
 class _SectionState extends State<Section> {
   late final String sectionApi;
   late final String studentsApi;
+  late final String teacherApi;
+  late final String coursesApi;
 
   List<Map<String, dynamic>> sections = [];
   List<dynamic> allStudents = [];
+  List<dynamic> teachers = [];
   List<String> selectedStudents = [];
+  String? selectedTeacherName;
+
   bool isLoading = false;
 
   DateTime focusedDay = DateTime.now();
   DateTime selectedDate = DateTime.now();
 
-  final TextEditingController teacherController = TextEditingController();
   final TextEditingController courseController = TextEditingController();
   final TextEditingController timeFromController = TextEditingController();
   final TextEditingController timeToController = TextEditingController();
@@ -43,8 +47,13 @@ class _SectionState extends State<Section> {
     super.initState();
     sectionApi = "${AppConfig.baseUrl}/section";
     studentsApi = "${AppConfig.baseUrl}/api/students/all";
+    teacherApi = "${AppConfig.baseUrl}/api/teacher/all";
+    coursesApi = "${AppConfig.baseUrl}/api/courses/all";
+
+    fetchTeachers();
     fetchSections();
     fetchStudents();
+    fetchCourses();
   }
 
   void showSnack(String message) {
@@ -58,19 +67,111 @@ class _SectionState extends State<Section> {
     );
   }
 
+  List<dynamic> courses = [];
+  String? selectedCourseName;
+
+//---------- Course get all--------
+  Future<void> fetchCourses() async {
+    try {
+      final res = await http.get(Uri.parse(coursesApi));
+      final jsonBody = jsonDecode(res.body);
+
+      if (res.statusCode == 200) {
+        setState(() => courses = jsonBody["data"] ?? []);
+      } else {
+        showSnack(jsonBody["message"] ?? "Failed to load courses");
+      }
+    } catch (e) {
+      showSnack("Error fetching courses: $e");
+    }
+  }
+
+  Future<String?> showSearchableSelector({
+    required BuildContext context,
+    required List<dynamic> items,
+    required String title,
+    required String labelKey, // "teacherName" or "courseName"
+  }) async {
+    String searchQuery = "";
+    final TextEditingController searchCtrl = TextEditingController();
+
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            final filtered = items.where((item) {
+              final name = item[labelKey].toString().toLowerCase();
+              return name.contains(searchQuery.toLowerCase());
+            }).toList();
+
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+
+                  // SEARCH BAR
+                  TextField(
+                    controller: searchCtrl,
+                    decoration: InputDecoration(
+                      hintText: "Search $title",
+                      prefixIcon: const Icon(Icons.search),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onChanged: (val) {
+                      setState(() {
+                        searchQuery = val;
+                      });
+                    },
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // LIST
+                  SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.55,
+                    child: filtered.isEmpty
+                        ? const Center(child: Text("No results found"))
+                        : ListView.builder(
+                            itemCount: filtered.length,
+                            itemBuilder: (_, index) {
+                              final item = filtered[index];
+                              final name = item[labelKey].toString();
+
+                              return ListTile(
+                                title: Text(name),
+                                onTap: () => Navigator.pop(context, name),
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   // ---------- Helper: unwrap unified response ----------
-  /// Returns a Map with keys:
-  /// {
-  ///   "ok": bool, // http success
-  ///   "message": String,
-  ///   "data": dynamic
-  /// }
   Map<String, dynamic> _unwrapResponse(http.Response resp) {
     final statusOk = resp.statusCode >= 200 && resp.statusCode < 300;
     try {
       final decoded = jsonDecode(resp.body);
       if (decoded is Map) {
-        // If server follows { message, data }
         if (decoded.containsKey('data') || decoded.containsKey('message')) {
           return {
             "ok": statusOk,
@@ -81,29 +182,54 @@ class _SectionState extends State<Section> {
                 : (decoded['data'] ?? decoded),
           };
         } else {
-          // Map without keys: treat whole map as data
           return {
             "ok": statusOk,
             "message": statusOk ? "Success" : "Error",
-            "data": decoded,
+            "data": decoded
           };
         }
       } else {
-        // decoded is not a map (e.g., list)
         return {
           "ok": statusOk,
           "message": statusOk ? "Success" : "Error",
-          "data": decoded,
+          "data": decoded
         };
       }
     } catch (e) {
-      // body is not json or decode failed -> fallback
       final body = resp.body.trim();
       return {
         "ok": statusOk,
         "message": body.isNotEmpty ? body : (statusOk ? "Success" : "Error"),
         "data": statusOk ? List<dynamic>.empty() : null,
       };
+    }
+  }
+
+  // ----------------------------- FETCH TEACHERS -----------------------------
+  Future<void> fetchTeachers() async {
+    try {
+      final res = await http.get(Uri.parse(teacherApi));
+      final wrapped = _unwrapResponse(res);
+      if (wrapped["ok"] == true) {
+        final raw = wrapped["data"];
+        List<dynamic> list = [];
+        if (raw is List)
+          list = raw;
+        else if (raw is Map && raw.containsKey('data'))
+          list = raw['data'] as List<dynamic>;
+        else if (raw is Map && raw.containsKey('teachers'))
+          list = raw['teachers'] as List<dynamic>;
+        else if (raw == null)
+          list = [];
+        else
+          list = [raw];
+
+        setState(() => teachers = list);
+      } else {
+        showSnack(wrapped["message"] ?? "Failed to load teachers");
+      }
+    } catch (e) {
+      showSnack("Error fetching teachers: $e");
     }
   }
 
@@ -115,8 +241,6 @@ class _SectionState extends State<Section> {
 
       if (wrapped["ok"] == true) {
         final rawData = wrapped["data"];
-
-        // backend might return { data: [...] } OR array directly OR { students: [...] }
         List<dynamic> studentsList = [];
         if (rawData is List) {
           studentsList = rawData;
@@ -127,7 +251,6 @@ class _SectionState extends State<Section> {
         } else if (rawData == null) {
           studentsList = [];
         } else {
-          // single object or map - try to coerce
           studentsList = [rawData];
         }
 
@@ -149,7 +272,6 @@ class _SectionState extends State<Section> {
 
       if (wrapped["ok"] == true) {
         final rawData = wrapped["data"];
-
         List<dynamic> rawList = [];
         if (rawData is List) {
           rawList = rawData;
@@ -158,7 +280,6 @@ class _SectionState extends State<Section> {
         } else if (rawData == null) {
           rawList = [];
         } else {
-          // If backend returned a single object, put it into a list
           rawList = [rawData];
         }
 
@@ -236,7 +357,7 @@ class _SectionState extends State<Section> {
 
   // ---------------- CREATE SECTION ----------------
   Future<void> createOrUpdateSection({Map<String, dynamic>? section}) async {
-    final teacherName = teacherController.text.trim();
+    final teacherName = selectedTeacherName?.trim() ?? "";
     final courseName = courseController.text.trim();
     final date = selectedDate.toIso8601String().split('T')[0];
     final timeFrom = _formatForBackend(timeFromController.text.trim());
@@ -389,7 +510,7 @@ class _SectionState extends State<Section> {
   // ---------------- UPDATE SECTION ----------------
   Future<void> updateSectionOnly(Map<String, dynamic> section) async {
     final payload = {
-      "teacherName": section["teacherName"],
+      "teacherName": selectedTeacherName ?? section["teacherName"],
       "courseName": section["courseName"],
       "date": section["date"],
       "timeFrom": section["timeFrom"],
@@ -434,7 +555,7 @@ class _SectionState extends State<Section> {
         "timeTo": section["timeTo"],
       },
       "newKey": {
-        "teacherName": teacherController.text.trim(),
+        "teacherName": selectedTeacherName ?? section["teacherName"],
         "courseName": courseController.text.trim(),
         "date": selectedDate.toIso8601String().split('T')[0],
         "timeFrom": _formatForBackend(timeFromController.text.trim()),
@@ -469,7 +590,7 @@ class _SectionState extends State<Section> {
         .toList();
 
     final Map<String, bool> attendanceMap = {
-      for (var a in attendanceList) a["studentName"]: a["present"] ?? false,
+      for (var a in attendanceList) a["studentName"]: a["present"] ?? false
     };
 
     bool isSaving = false;
@@ -482,33 +603,25 @@ class _SectionState extends State<Section> {
           children: [
             AlertDialog(
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
+                  borderRadius: BorderRadius.circular(20)),
               titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
               contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
               title: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "📝 Mark Attendance",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    "${section["teacherName"]} • ${section["courseName"]}",
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text("📝 Mark Attendance",
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 20)),
+                    const SizedBox(height: 6),
+                    Text("${section["teacherName"]} • ${section["courseName"]}",
+                        style:
+                            TextStyle(color: Colors.grey[600], fontSize: 14)),
+                  ]),
               content: SizedBox(
                 width: double.maxFinite,
                 height: MediaQuery.of(context).size.height * 0.55,
                 child: Column(
                   children: [
-                    // --- Top Buttons Row ---
                     Padding(
                       padding: const EdgeInsets.only(bottom: 8.0, top: 8.0),
                       child: Row(
@@ -516,14 +629,12 @@ class _SectionState extends State<Section> {
                         children: [
                           Expanded(
                             child: ElevatedButton.icon(
-                              //  icon: const Icon(Icons.done_all, size: 18),
                               label: const Text("All Present"),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: TColors.success,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
+                                    borderRadius: BorderRadius.circular(10)),
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 10.0),
                               ),
@@ -544,14 +655,12 @@ class _SectionState extends State<Section> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: ElevatedButton.icon(
-                              // icon: const Icon(Icons.close, size: 18),
                               label: const Text("Select None"),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: TColors.error,
                                 foregroundColor: Colors.white,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
+                                    borderRadius: BorderRadius.circular(10)),
                                 padding:
                                     const EdgeInsets.symmetric(vertical: 10.0),
                               ),
@@ -566,14 +675,11 @@ class _SectionState extends State<Section> {
                       ),
                     ),
                     const Divider(thickness: 1.2),
-
-                    // --- Student List ---
                     Expanded(
                       child: attendanceMap.isEmpty
                           ? const Center(
                               child:
-                                  Text("No students found for this section."),
-                            )
+                                  Text("No students found for this section."))
                           : ListView.separated(
                               separatorBuilder: (_, __) =>
                                   const Divider(height: 1, thickness: 0.3),
@@ -582,15 +688,12 @@ class _SectionState extends State<Section> {
                                 final name =
                                     attendanceMap.keys.elementAt(index);
                                 return CheckboxListTile(
-                                  title: Text(
-                                    name,
-                                    style: const TextStyle(fontSize: 15),
-                                  ),
+                                  title: Text(name,
+                                      style: const TextStyle(fontSize: 15)),
                                   value: attendanceMap[name],
                                   activeColor: TColors.secondary,
                                   checkboxShape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
+                                      borderRadius: BorderRadius.circular(4)),
                                   controlAffinity:
                                       ListTileControlAffinity.trailing,
                                   onChanged: (value) {
@@ -608,32 +711,29 @@ class _SectionState extends State<Section> {
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               actions: [
                 TextButton.icon(
-                  icon: const Icon(Icons.cancel_outlined),
-                  label: const Text("Cancel"),
-                  onPressed: () => Navigator.pop(context),
-                ),
+                    icon: const Icon(Icons.cancel_outlined),
+                    label: const Text("Cancel"),
+                    onPressed: () => Navigator.pop(context)),
                 ElevatedButton.icon(
                   icon: const Icon(Icons.save_alt),
                   label: const Text("Save Attendance"),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: TColors.secondary,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
+                      backgroundColor: TColors.secondary,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12))),
                   onPressed: () async {
                     setState(() => isSaving = true);
                     for (var entry in attendanceMap.entries) {
                       await markAttendance(
-                        section["teacherName"],
-                        section["courseName"],
-                        section["date"],
-                        section["timeFrom"],
-                        section["timeTo"],
-                        entry.key,
-                        entry.value,
-                      );
+                          section["teacherName"],
+                          section["courseName"],
+                          section["date"],
+                          section["timeFrom"],
+                          section["timeTo"],
+                          entry.key,
+                          entry.value);
                     }
                     setState(() => isSaving = false);
                     Navigator.pop(context);
@@ -642,23 +742,16 @@ class _SectionState extends State<Section> {
                 ),
               ],
             ),
-
-            // --- Overlay while saving ---
             if (isSaving)
               Container(
                 color: Colors.black.withOpacity(0.4),
                 child: const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(color: Colors.white),
-                      SizedBox(height: 12),
-                      Text(
-                        "Saving attendance...",
-                        style: TextStyle(color: Colors.white, fontSize: 16),
-                      ),
-                    ],
-                  ),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    CircularProgressIndicator(color: Colors.white),
+                    SizedBox(height: 12),
+                    Text("Saving attendance...",
+                        style: TextStyle(color: Colors.white, fontSize: 16))
+                  ]),
                 ),
               ),
           ],
@@ -703,14 +796,13 @@ class _SectionState extends State<Section> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, null),
-            child: const Text("Cancel"),
-          ),
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text("Cancel")),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: TColors.secondary),
-            onPressed: () => Navigator.pop(context, tempSelected),
-            child: const Text("Done"),
-          ),
+              style:
+                  ElevatedButton.styleFrom(backgroundColor: TColors.secondary),
+              onPressed: () => Navigator.pop(context, tempSelected),
+              child: const Text("Done")),
         ],
       ),
     );
@@ -733,9 +825,7 @@ class _SectionState extends State<Section> {
             fillColor: THelperFunctions.isDarkMode(context)
                 ? TColors.dark
                 : TColors.light,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
       );
@@ -745,7 +835,7 @@ class _SectionState extends State<Section> {
     final isEdit = section != null;
 
     if (isEdit) {
-      teacherController.text = section!["teacherName"];
+      selectedTeacherName = section!["teacherName"];
       courseController.text = section["courseName"];
       selectedDate = DateTime.parse(section["date"]);
       timeFromController.text = section["timeFrom"];
@@ -755,7 +845,7 @@ class _SectionState extends State<Section> {
       repeatWeekly = section["repeatWeekly"] ?? false;
       repeatCount = section["repeatCount"] ?? 0;
     } else {
-      teacherController.clear();
+      selectedTeacherName = null;
       courseController.clear();
       timeFromController.clear();
       timeToController.clear();
@@ -765,7 +855,6 @@ class _SectionState extends State<Section> {
       repeatCount = 0;
     }
 
-    // Sync repeatCount with controller before showing
     repeatCountController.text = repeatCount == 0 ? "" : repeatCount.toString();
 
     showModalBottomSheet(
@@ -773,94 +862,85 @@ class _SectionState extends State<Section> {
       context: context,
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
       builder: (context) {
         return Padding(
           padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-            top: 20,
-          ),
+              bottom: MediaQuery.of(context).viewInsets.bottom, top: 20),
           child: StatefulBuilder(
             builder: (context, setState) {
-              // Keep controller updated whenever repeatCount changes
               repeatCountController.text =
                   repeatCount == 0 ? "" : repeatCount.toString();
 
               return SingleChildScrollView(
                 padding: const EdgeInsets.all(TSizes.defaultSpace),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Text(
-                        isEdit ? "Edit Section" : "Add Section",
-                        style: const TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    const SizedBox(height: TSizes.defaultSpace),
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                          child: Text(isEdit ? "Edit Section" : "Add Section",
+                              style: const TextStyle(
+                                  fontSize: 20, fontWeight: FontWeight.bold))),
+                      const SizedBox(height: TSizes.defaultSpace),
 
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: TextField(
-                        controller: teacherController,
-                        decoration: InputDecoration(
-                          label: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Text("Teacher Name"),
-                              SizedBox(width: 6),
-                              Icon(Icons.key, size: 18),
-                            ],
-                          ),
-                          filled: true,
-                          fillColor: THelperFunctions.isDarkMode(context)
-                              ? TColors.dark
-                              : TColors.light,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      ),
-                    ),
+                      // COURSE
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: InkWell(
+                          onTap: () async {
+                            final course = await showSearchableSelector(
+                              context: context,
+                              items: courses,
+                              title: "Select Course",
+                              labelKey: "courseName",
+                            );
 
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: TextField(
-                        controller: courseController,
-                        decoration: InputDecoration(
-                          label: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Text("Course Name"),
-                              SizedBox(width: 6),
-                              Icon(Icons.key, size: 18),
-                            ],
-                          ),
-                          filled: true,
-                          fillColor: THelperFunctions.isDarkMode(context)
-                              ? TColors.dark
-                              : TColors.light,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                            if (course != null) {
+                              setState(() {
+                                selectedCourseName = course;
+                                courseController.text = course;
+                              });
+                            }
+                          },
+                          child: InputDecorator(
+                            decoration: InputDecoration(
+                              label: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text("Course"),
+                                    SizedBox(width: 6),
+                                    Icon(Icons.key, size: 18)
+                                  ]),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                            ),
+                            child: Text(
+                              selectedCourseName ?? "Tap to select course",
+                              style: TextStyle(
+                                color: selectedCourseName == null
+                                    ? Colors.grey
+                                    : Theme.of(context)
+                                        .textTheme
+                                        .bodyLarge!
+                                        .color,
+                              ),
+                            ),
                           ),
                         ),
                       ),
-                    ),
 
-                    const SizedBox(height: TSizes.spaceBtwItems),
+                      const SizedBox(height: TSizes.spaceBtwItems),
 
-                    // Time Pickers
-                    Row(
-                      children: [
+                      // Time Pickers
+                      Row(children: [
                         Expanded(
                           child: GestureDetector(
                             onTap: () async {
                               final picked = await showTimePicker(
-                                context: context,
-                                initialTime: TimeOfDay.now(),
-                              );
+                                  context: context,
+                                  initialTime: TimeOfDay.now());
                               if (picked != null) {
                                 setState(() {
                                   timeFromController.text =
@@ -875,22 +955,21 @@ class _SectionState extends State<Section> {
                                 child: TextField(
                                   controller: timeFromController,
                                   decoration: InputDecoration(
-                                    label: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: const [
-                                        Text("From"),
-                                        SizedBox(width: 6),
-                                        Icon(Icons.key, size: 18),
-                                      ],
-                                    ),
+                                    label: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text("From"),
+                                          SizedBox(width: 6),
+                                          Icon(Icons.key, size: 18)
+                                        ]),
                                     filled: true,
                                     fillColor:
                                         THelperFunctions.isDarkMode(context)
                                             ? TColors.dark
                                             : TColors.light,
                                     border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
+                                        borderRadius:
+                                            BorderRadius.circular(12)),
                                   ),
                                 ),
                               ),
@@ -902,9 +981,8 @@ class _SectionState extends State<Section> {
                           child: GestureDetector(
                             onTap: () async {
                               final picked = await showTimePicker(
-                                context: context,
-                                initialTime: TimeOfDay.now(),
-                              );
+                                  context: context,
+                                  initialTime: TimeOfDay.now());
                               if (picked != null) {
                                 setState(() {
                                   timeToController.text =
@@ -919,204 +997,217 @@ class _SectionState extends State<Section> {
                                 child: TextField(
                                   controller: timeToController,
                                   decoration: InputDecoration(
-                                    label: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: const [
-                                        Text("To"),
-                                        SizedBox(width: 6),
-                                        Icon(Icons.key, size: 18),
-                                      ],
-                                    ),
+                                    label: const Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text("To"),
+                                          SizedBox(width: 6),
+                                          Icon(Icons.key, size: 18)
+                                        ]),
                                     filled: true,
                                     fillColor:
                                         THelperFunctions.isDarkMode(context)
                                             ? TColors.dark
                                             : TColors.light,
                                     border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
+                                        borderRadius:
+                                            BorderRadius.circular(12)),
                                   ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ],
-                    ),
+                      ]),
 
-                    const SizedBox(height: TSizes.spaceBtwItems),
+                      const SizedBox(height: TSizes.spaceBtwItems),
 
-// ADMIN REMARK WITH ICON
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: TextField(
-                        controller: adminRemarkController,
-                        decoration: InputDecoration(
-                          label: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: const [
-                              Text("Admin Remark"),
-                              SizedBox(width: 6),
-                              Icon(Icons.update, size: 18),
-                            ],
-                          ),
-                          filled: true,
-                          fillColor: THelperFunctions.isDarkMode(context)
-                              ? TColors.dark
-                              : TColors.light,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
+                      // TEACHER
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: InkWell(
+                          onTap: () async {
+                            final name = await showSearchableSelector(
+                              context: context,
+                              items: teachers,
+                              title: "Select Teacher",
+                              labelKey: "teacherName",
+                            );
+
+                            if (name != null) {
+                              setState(() {
+                                selectedTeacherName = name;
+                              });
+                            }
+                          },
+                          child: InputDecorator(
+                            decoration: InputDecoration(
+                              label: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text("Teacher"),
+                                    SizedBox(width: 6),
+                                    Icon(Icons.update, size: 18)
+                                  ]),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              filled: true,
+                            ),
+                            child: Text(
+                              selectedTeacherName ?? "Tap to select teacher",
+                              style: TextStyle(
+                                  color: selectedTeacherName == null
+                                      ? Colors.grey
+                                      : Theme.of(context)
+                                          .textTheme
+                                          .bodyLarge!
+                                          .color),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-
-                    const SizedBox(height: 15),
-
-// SELECT STUDENTS
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        TextButton.icon(
-                          icon: const Icon(Icons.group_add),
-                          label: const Text("Select Students"),
-                          onPressed: () => _selectStudents(setState),
+                      // ADMIN REMARK
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: TextField(
+                          controller: adminRemarkController,
+                          decoration: InputDecoration(
+                            label: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text("Admin Remark"),
+                                  SizedBox(width: 6),
+                                  Icon(Icons.update, size: 18)
+                                ]),
+                            filled: true,
+                            fillColor: THelperFunctions.isDarkMode(context)
+                                ? TColors.dark
+                                : TColors.light,
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
                         ),
-                        Text("${selectedStudents.length} selected",
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w600)),
-                      ],
-                    ),
+                      ),
 
-                    Wrap(
-                      spacing: 6,
-                      children: selectedStudents
-                          .map((s) => Chip(
-                                label: Text(s),
-                                backgroundColor:
-                                    TColors.secondary.withOpacity(0.2),
-                              ))
-                          .toList(),
-                    ),
+                      const SizedBox(height: TSizes.spaceBtwItems),
 
-                    const Divider(height: 30),
-
-// REPEAT SECTION
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
+                      // SELECT STUDENTS
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Switch(
-                              value: repeatWeekly,
-                              activeColor: TColors.primary,
-                              onChanged: (value) {
+                            TextButton.icon(
+                                icon: const Icon(Icons.group_add),
+                                label: const Text("Select Students"),
+                                onPressed: () => _selectStudents(setState)),
+                            Text("${selectedStudents.length} selected",
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600)),
+                          ]),
+
+                      Wrap(
+                          spacing: 6,
+                          children: selectedStudents
+                              .map((s) => Chip(
+                                  label: Text(s),
+                                  backgroundColor:
+                                      TColors.secondary.withOpacity(0.2)))
+                              .toList()),
+
+                      const Divider(height: TSizes.spaceBtwItems),
+
+                      // REPEAT SECTION
+                      Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(children: [
+                              Switch(
+                                value: repeatWeekly,
+                                activeColor: TColors.primary,
+                                onChanged: (value) {
+                                  setState(() {
+                                    repeatWeekly = value;
+                                    if (!value) {
+                                      repeatCount = 0;
+                                      repeatCountController.clear();
+                                    }
+                                  });
+                                },
+                              ),
+                              const Row(children: [
+                                Text(" Repeat Monthly",
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600)),
+                                SizedBox(width: 6),
+                                Icon(Icons.update, size: 18)
+                              ]),
+                            ]),
+                            const SizedBox(height: TSizes.spaceBtwItems),
+                            TextField(
+                              controller: repeatCountController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                  label: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text("Repeat Count (weeks)"),
+                                        SizedBox(width: 6),
+                                        Icon(Icons.update, size: 18)
+                                      ]),
+                                  border: OutlineInputBorder(),
+                                  isDense: true),
+                              onChanged: (val) {
                                 setState(() {
-                                  repeatWeekly = value;
-                                  if (!value) {
-                                    repeatCount = 0;
-                                    repeatCountController.clear();
-                                  }
+                                  repeatCount = int.tryParse(val) ?? 0;
                                 });
                               },
                             ),
+                          ]),
 
-                            // LABEL WITH UPDATE ICON
-                            Row(
-                              children: const [
-                                Text(
-                                  " Repeat Monthly",
-                                  style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600),
-                                ),
-                                SizedBox(width: 6),
-                                Icon(Icons.update, size: 18),
-                              ],
-                            ),
-                          ],
-                        ),
+                      const SizedBox(height: TSizes.spaceBtwItems),
 
-                        const SizedBox(height: 10),
-
-                        // REPEAT COUNT WITH ICON
-                        TextField(
-                          controller: repeatCountController,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            label: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: const [
-                                Text("Repeat Count (weeks)"),
-                                SizedBox(width: 6),
-                                Icon(Icons.update, size: 18),
-                              ],
-                            ),
-                            border: const OutlineInputBorder(),
-                            isDense: true,
-                          ),
-                          onChanged: (val) {
-                            setState(() {
-                              repeatCount = int.tryParse(val) ?? 0;
-                            });
-                          },
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 25),
-
-                    // Buttons: Create OR (Update + Change Key)
-                    Center(
-                      child: isEdit
-                          ? Row(
-                              children: [
-                                // CHANGE KEY BUTTON (FIRST)
+                      // Buttons: Create OR (Update + Change Key)
+                      Center(
+                        child: isEdit
+                            ? Row(children: [
                                 Expanded(
                                   child: ElevatedButton.icon(
                                     icon: const Icon(Icons.key),
                                     label: const Text("Change Key"),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: TColors.secondary,
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 14),
-                                    ),
+                                        backgroundColor: TColors.secondary,
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 14)),
                                     onPressed: () =>
                                         changeSectionKeyFlutter(section!),
                                   ),
                                 ),
-
                                 const SizedBox(width: 12),
-
-                                // UPDATE BUTTON (SECOND)
                                 Expanded(
                                   child: ElevatedButton.icon(
                                     icon: const Icon(Icons.update),
                                     label: const Text("Update"),
                                     style: ElevatedButton.styleFrom(
-                                      backgroundColor: TColors.primary,
-                                      padding: const EdgeInsets.symmetric(
-                                          vertical: 14),
-                                    ),
+                                        backgroundColor: TColors.primary,
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 14)),
                                     onPressed: () =>
                                         updateSectionOnly(section!),
                                   ),
                                 ),
-                              ],
-                            )
-                          : ElevatedButton.icon(
-                              icon: const Icon(Icons.save),
-                              label: const Text("Create"),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: TColors.primary,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 40, vertical: 14),
+                              ])
+                            : ElevatedButton.icon(
+                                icon: const Icon(Icons.save),
+                                label: const Text("Create"),
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: TColors.primary,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 40, vertical: 14)),
+                                onPressed: () => createOrUpdateSection(),
                               ),
-                              onPressed: () => createOrUpdateSection(),
-                            ),
-                    )
-                  ],
-                ),
+                      )
+                    ]),
               );
             },
           ),
@@ -1131,100 +1222,62 @@ class _SectionState extends State<Section> {
       duration: const Duration(milliseconds: 300),
       margin: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: darkMode ? Colors.grey[850] : Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 6,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
+          color: darkMode ? Colors.grey[850] : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 6,
+                offset: const Offset(0, 3))
+          ]),
       child: ListTile(
         contentPadding: const EdgeInsets.all(16),
         title: Text(
-          "${s['teacherName'].toString().toUpperCase()} - ${s['courseName'].toString().toUpperCase()}",
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 16,
-            letterSpacing: 0.5,
-          ),
-        ),
+            "${s['teacherName'].toString().toUpperCase()} - ${s['courseName'].toString().toUpperCase()}",
+            style: const TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 16, letterSpacing: 0.5)),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Time with color
-              Text(
-                "${s['timeFrom']} - ${s['timeTo']}",
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 4),
-
-              // Admin Remark
-              Text(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text("${s['timeFrom']} - ${s['timeTo']}",
+                style:
+                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            const SizedBox(height: 4),
+            Text(
                 "Admin Remark: ${s['adminRemark']?.isNotEmpty == true ? s['adminRemark'] : '-'}",
-                style: TextStyle(
-                  color: TColors.darkGrey,
-                  fontSize: 13,
-                ),
-              ),
-              const SizedBox(height: 4),
-
-              // Present / Absent Counts
-              Row(
-                children: [
-                  // Present
-                  RichText(
-                    text: TextSpan(
+                style: TextStyle(color: TColors.darkGrey, fontSize: 13)),
+            const SizedBox(height: 4),
+            Row(children: [
+              RichText(
+                  text: TextSpan(
                       text: "Present: ",
                       style: const TextStyle(
-                        color: TColors.darkGrey,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13.5,
-                      ),
+                          color: TColors.darkGrey,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13.5),
                       children: [
-                        TextSpan(
-                          text: "${s['presentCount']}",
-                          style: const TextStyle(
-                            color: TColors.third,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  // Absent
-                  RichText(
-                    text: TextSpan(
+                    TextSpan(
+                        text: "${s['presentCount']}",
+                        style: const TextStyle(
+                            color: TColors.third, fontWeight: FontWeight.w700))
+                  ])),
+              const SizedBox(width: 16),
+              RichText(
+                  text: TextSpan(
                       text: "Absent: ",
                       style: const TextStyle(
-                        color: TColors.darkGrey,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13.5,
-                      ),
+                          color: TColors.darkGrey,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13.5),
                       children: [
-                        TextSpan(
-                          text: "${s['absentCount']}",
-                          style: const TextStyle(
-                            color: TColors.third,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
+                    TextSpan(
+                        text: "${s['absentCount']}",
+                        style: const TextStyle(
+                            color: TColors.third, fontWeight: FontWeight.w700))
+                  ])),
+            ]),
+          ]),
         ),
         isThreeLine: true,
         trailing: PopupMenuButton<String>(
@@ -1240,7 +1293,7 @@ class _SectionState extends State<Section> {
           itemBuilder: (_) => const [
             PopupMenuItem(value: 'edit', child: Text('Edit')),
             PopupMenuItem(value: 'delete', child: Text('Delete')),
-            PopupMenuItem(value: 'attendance', child: Text('Mark Attendance')),
+            PopupMenuItem(value: 'attendance', child: Text('Mark Attendance'))
           ],
         ),
       ),
@@ -1256,14 +1309,12 @@ class _SectionState extends State<Section> {
             "Are you sure you want to delete this section? This action cannot be undone."),
         actions: [
           TextButton(
-            child: const Text("Cancel"),
-            onPressed: () => Navigator.pop(ctx, false),
-          ),
+              child: const Text("Cancel"),
+              onPressed: () => Navigator.pop(ctx, false)),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: TColors.error),
-            child: const Text("Delete"),
-            onPressed: () => Navigator.pop(ctx, true),
-          ),
+              style: ElevatedButton.styleFrom(backgroundColor: TColors.error),
+              child: const Text("Delete"),
+              onPressed: () => Navigator.pop(ctx, true)),
         ],
       ),
     );
@@ -1278,13 +1329,13 @@ class _SectionState extends State<Section> {
     final darkMode = THelperFunctions.isDarkMode(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Section Schedule"),
-        centerTitle: true,
-        automaticallyImplyLeading: false,
-        actions: [
-          IconButton(onPressed: fetchSections, icon: const Icon(Icons.refresh))
-        ],
-      ),
+          title: const Text("Section Schedule"),
+          centerTitle: true,
+          automaticallyImplyLeading: false,
+          actions: [
+            IconButton(
+                onPressed: fetchSections, icon: const Icon(Icons.refresh))
+          ]),
       floatingActionButtonLocation: FloatingActionButtonLocation.endDocked,
       floatingActionButton: Obx(() {
         final controller = Get.find<NavigationController>();
@@ -1292,101 +1343,88 @@ class _SectionState extends State<Section> {
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeIn,
           padding: EdgeInsets.only(
-            bottom: controller.isNavVisible.value ? 95.0 : 12.0,
-            right: controller.isNavVisible.value ? 15 : 1,
-          ),
+              bottom: controller.isNavVisible.value ? 95.0 : 12.0,
+              right: controller.isNavVisible.value ? 15 : 1),
           child: FloatingActionButton(
-            onPressed: () => openSectionDialog(),
-            backgroundColor: TColors.primary,
-            elevation: 6,
-            child: const Icon(Icons.add, size: 28),
-          ),
+              onPressed: () => openSectionDialog(),
+              backgroundColor: TColors.primary,
+              elevation: 6,
+              child: const Icon(Icons.add, size: 28)),
         );
       }),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Card(
-                  margin: const EdgeInsets.all(12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20)),
-                  elevation: 5,
-                  child: Padding(
-                    padding: const EdgeInsets.all(8.0),
-                    child: TableCalendar(
-                      focusedDay: focusedDay,
-                      firstDay: DateTime(2020),
-                      lastDay: DateTime(2030),
-                      selectedDayPredicate: (day) =>
-                          isSameDay(selectedDate, day),
-                      onDaySelected: (selectedDay, focusedDay) {
-                        setState(() {
-                          selectedDate = selectedDay;
-                          this.focusedDay = focusedDay;
-                        });
-                      },
-                      calendarStyle: CalendarStyle(
-                        todayDecoration: BoxDecoration(
-                            color: TColors.primary.withOpacity(0.8),
-                            shape: BoxShape.circle),
-                        selectedDecoration: const BoxDecoration(
-                            color: TColors.secondary, shape: BoxShape.circle),
-                        markerDecoration: const BoxDecoration(
-                            color: TColors.third, shape: BoxShape.circle),
-                        outsideDaysVisible: false,
-                      ),
-                      headerStyle: const HeaderStyle(
+          : Column(children: [
+              Card(
+                margin: const EdgeInsets.all(12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+                elevation: 5,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: TableCalendar(
+                    focusedDay: focusedDay,
+                    firstDay: DateTime(2020),
+                    lastDay: DateTime(2030),
+                    selectedDayPredicate: (day) => isSameDay(selectedDate, day),
+                    onDaySelected: (selectedDay, focusedDay) {
+                      setState(() {
+                        selectedDate = selectedDay;
+                        this.focusedDay = focusedDay;
+                      });
+                    },
+                    calendarStyle: CalendarStyle(
+                      todayDecoration: BoxDecoration(
+                          color: TColors.primary.withOpacity(0.8),
+                          shape: BoxShape.circle),
+                      selectedDecoration: const BoxDecoration(
+                          color: TColors.secondary, shape: BoxShape.circle),
+                      markerDecoration: const BoxDecoration(
+                          color: TColors.third, shape: BoxShape.circle),
+                      outsideDaysVisible: false,
+                    ),
+                    headerStyle: const HeaderStyle(
                         formatButtonVisible: false,
                         titleCentered: true,
                         titleTextStyle: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
-                      calendarBuilders: CalendarBuilders(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    calendarBuilders: CalendarBuilders(
                         markerBuilder: (context, date, events) {
-                          if (sectionDates.contains(
-                              DateTime(date.year, date.month, date.day))) {
-                            return Positioned(
-                              bottom: 4,
-                              child: Container(
+                      if (sectionDates.contains(
+                          DateTime(date.year, date.month, date.day))) {
+                        return Positioned(
+                            bottom: 4,
+                            child: Container(
                                 width: 6,
                                 height: 6,
                                 decoration: const BoxDecoration(
-                                  color: TColors.third,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            );
-                          }
-                          return null;
-                        },
-                      ),
-                    ),
+                                    color: TColors.third,
+                                    shape: BoxShape.circle)));
+                      }
+                      return null;
+                    }),
                   ),
                 ),
-                Expanded(
-                  child: RefreshIndicator(
-                    onRefresh: fetchSections,
-                    child: sectionsForSelectedDate.isEmpty
-                        ? const Center(
-                            heightFactor: 8.0,
-                            child: Text(
-                              "No sections for this day",
-                              style: TextStyle(fontSize: 16),
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            itemCount: sectionsForSelectedDate.length,
-                            itemBuilder: (context, index) {
-                              final s = sectionsForSelectedDate[index];
-                              return _buildSectionCard(s, darkMode);
-                            },
-                          ),
-                  ),
+              ),
+              Expanded(
+                child: RefreshIndicator(
+                  onRefresh: fetchSections,
+                  child: sectionsForSelectedDate.isEmpty
+                      ? const Center(
+                          heightFactor: 8.0,
+                          child: Text("No sections for this day",
+                              style: TextStyle(fontSize: 16)))
+                      : ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          itemCount: sectionsForSelectedDate.length,
+                          itemBuilder: (context, index) {
+                            final s = sectionsForSelectedDate[index];
+                            return _buildSectionCard(s, darkMode);
+                          },
+                        ),
                 ),
-              ],
-            ),
+              ),
+            ]),
     );
   }
 }

@@ -1,11 +1,8 @@
 import 'dart:convert';
 import 'dart:ui';
 import 'package:Fin/utils/http/appconfig.dart';
-
 import 'package:Fin/utils/constants/colors.dart';
-
 import 'package:flutter/material.dart';
-
 import 'package:http/http.dart' as http;
 
 class Students extends StatefulWidget {
@@ -50,14 +47,11 @@ class _StudentsState extends State<Students> {
   void showSnack(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-      ),
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
     );
   }
 
-  // FETCH ACTIVE STUDENTS (updated for backend format)
+  // FETCH ACTIVE STUDENTS
   Future<void> fetchStudents() async {
     setState(() => isLoading = true);
 
@@ -126,11 +120,11 @@ class _StudentsState extends State<Students> {
     }
   }
 
-  // UPDATE STUDENT
-  Future<void> updateStudent(String originalName) async {
+  // UPDATE STUDENT (BY ID)
+  Future<void> updateStudentById(int id) async {
     try {
       final res = await http.put(
-        Uri.parse("$studentsApi/update/$originalName"),
+        Uri.parse("$studentsApi/update/$id"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "studentName": nameController.text.trim(),
@@ -155,13 +149,11 @@ class _StudentsState extends State<Students> {
     }
   }
 
-  // SOFT DELETE
-  Future<void> deleteStudent(String studentName) async {
+  // DELETE STUDENT (BY ID)
+  Future<void> deleteStudentById(int id) async {
     try {
       final res = await http.delete(
-        Uri.parse("$studentsApi/delete"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"studentName": studentName}),
+        Uri.parse("$studentsApi/delete/$id"),
       );
 
       final json = jsonDecode(res.body);
@@ -176,8 +168,8 @@ class _StudentsState extends State<Students> {
     }
   }
 
-  // DELETE CONFIRM
-  Future<void> confirmDeleteStudent(String name) async {
+  // CONFIRM DELETE
+  Future<void> confirmDeleteStudent(int id, String name) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -194,13 +186,16 @@ class _StudentsState extends State<Students> {
       ),
     );
 
-    if (confirm == true) deleteStudent(name);
+    if (confirm == true) deleteStudentById(id);
   }
 
-  // REACTIVATE STUDENT
-  Future<void> reactivateStudent(String name) async {
+  // REACTIVATE STUDENT (BY ID)
+  Future<void> reactivateStudentById(int id) async {
     try {
-      final res = await http.put(Uri.parse("$studentsApi/reactivate/$name"));
+      final res = await http.put(
+        Uri.parse("$studentsApi/reactivate/$id"),
+      );
+
       final json = jsonDecode(res.body);
       showSnack(json["message"]);
 
@@ -213,7 +208,7 @@ class _StudentsState extends State<Students> {
     }
   }
 
-  Future<void> confirmReactivateStudent(String name) async {
+  Future<void> confirmReactivateStudent(int id, String name) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -230,7 +225,7 @@ class _StudentsState extends State<Students> {
       ),
     );
 
-    if (confirm == true) reactivateStudent(name);
+    if (confirm == true) reactivateStudentById(id);
   }
 
   // CLEAR FIELDS
@@ -262,9 +257,8 @@ class _StudentsState extends State<Students> {
       builder: (_) => BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
         child: AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16.0),
-          ),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16.0)),
           title: Text(editing ? "Edit Student" : "Add Student"),
           content: SingleChildScrollView(
             child: Column(
@@ -284,13 +278,10 @@ class _StudentsState extends State<Students> {
             ElevatedButton(
               onPressed: () {
                 Navigator.pop(context);
-                editing
-                    ? updateStudent(student!["studentName"])
-                    : createStudent();
+                editing ? updateStudentById(student!["id"]) : createStudent();
               },
               style: ButtonStyle(
-                backgroundColor: MaterialStateProperty.all(TColors.info),
-              ),
+                  backgroundColor: MaterialStateProperty.all(TColors.info)),
               child: Text(editing ? "Update" : "Save"),
             ),
           ],
@@ -306,9 +297,7 @@ class _StudentsState extends State<Students> {
         controller: controller,
         decoration: InputDecoration(
           labelText: label,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
         ),
       ),
     );
@@ -387,9 +376,8 @@ class _StudentsState extends State<Students> {
                                   Text(
                                     s["studentName"] ?? "Unknown",
                                     style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 16,
-                                    ),
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 16),
                                   ),
                                   const SizedBox(width: 10),
                                   Container(
@@ -439,14 +427,14 @@ class _StudentsState extends State<Students> {
                                       icon: const Icon(Icons.delete,
                                           color: TColors.error),
                                       onPressed: () => confirmDeleteStudent(
-                                          s["studentName"]),
+                                          s["id"], s["studentName"]),
                                     ),
                                   ] else ...[
                                     IconButton(
                                       icon: const Icon(Icons.refresh,
                                           color: Colors.green),
                                       onPressed: () => confirmReactivateStudent(
-                                          s["studentName"]),
+                                          s["id"], s["studentName"]),
                                     ),
                                   ],
                                 ],

@@ -19,8 +19,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final List<Map<String, String>> _products = [
     {'title': 'Section', 'image': TImages.logodark, 'image1': TImages.og01},
     {'title': 'Create', 'image': TImages.og03, 'image1': TImages.og04},
-    {'title': 'Attendance', 'image': TImages.og09, 'image1': TImages.og08},
-    {'title': 'Fees', 'image': TImages.og05, 'image1': TImages.og06},
+    {'title': 'Teacher Salary', 'image': TImages.og09, 'image1': TImages.og08},
+    {'title': 'Student Fee', 'image': TImages.og05, 'image1': TImages.og06},
   ];
 
   @override

@@ -6,6 +6,7 @@ class TImages {
 
   static const String logo = "assets/images/og_creation/logo.png";
   static const String logodark = "assets/images/og_creation/logodarkmode.jpg";
+  static const String background = "assets/images/og_creation/background.jpg";
 
   static const String og01 = "assets/images/og_creation/d1.jpg";
 

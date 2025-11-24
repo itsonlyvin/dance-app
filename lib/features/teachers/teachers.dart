@@ -1,11 +1,8 @@
 import 'dart:convert';
 import 'dart:ui';
 import 'package:Fin/utils/http/appconfig.dart';
-
 import 'package:Fin/utils/constants/colors.dart';
-
 import 'package:flutter/material.dart';
-
 import 'package:http/http.dart' as http;
 
 class Teachers extends StatefulWidget {
@@ -23,6 +20,7 @@ class _TeachersState extends State<Teachers> {
   final TextEditingController emailController = TextEditingController();
   final TextEditingController ageController = TextEditingController();
   final TextEditingController courseController = TextEditingController();
+  final TextEditingController salaryController = TextEditingController();
 
   List<dynamic> teachers = [];
   List<dynamic> inactiveTeachers = [];
@@ -53,7 +51,7 @@ class _TeachersState extends State<Teachers> {
     );
   }
 
-  // ================= FETCH ACTIVE =================
+  // ============== FETCH ACTIVE ==============
   Future<void> fetchTeachers() async {
     setState(() => isLoading = true);
     try {
@@ -71,7 +69,7 @@ class _TeachersState extends State<Teachers> {
     setState(() => isLoading = false);
   }
 
-  // ================= FETCH INACTIVE =================
+  // ============== FETCH INACTIVE ==============
   Future<void> fetchInactiveTeachers() async {
     setState(() => isLoading = true);
     try {
@@ -89,7 +87,7 @@ class _TeachersState extends State<Teachers> {
     setState(() => isLoading = false);
   }
 
-  // ================= CREATE =================
+  // ============== CREATE TEACHER ==============
   Future<void> createTeacher() async {
     try {
       final res = await http.post(
@@ -100,6 +98,7 @@ class _TeachersState extends State<Teachers> {
           "phoneNumber": phoneController.text.trim(),
           "email": emailController.text.trim(),
           "age": int.tryParse(ageController.text.trim()) ?? 0,
+          "salaryPerHour": salaryController.text.trim(),
           "coursesTea": courseController.text.isNotEmpty
               ? courseController.text.split(",").map((c) => c.trim()).toList()
               : [],
@@ -118,17 +117,18 @@ class _TeachersState extends State<Teachers> {
     }
   }
 
-  // ================= UPDATE =================
-  Future<void> updateTeacher(String originalName) async {
+  // ============== UPDATE TEACHER BY ID ==============
+  Future<void> updateTeacherById(int id) async {
     try {
       final res = await http.put(
-        Uri.parse("$teacherApi/update/$originalName"),
+        Uri.parse("$teacherApi/update/$id"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode({
           "teacherName": nameController.text.trim(),
           "phoneNumber": phoneController.text.trim(),
           "email": emailController.text.trim(),
           "age": int.tryParse(ageController.text.trim()) ?? 0,
+          "salaryPerHour": salaryController.text.trim(),
           "coursesTea": courseController.text.isNotEmpty
               ? courseController.text.split(",").map((c) => c.trim()).toList()
               : [],
@@ -147,13 +147,11 @@ class _TeachersState extends State<Teachers> {
     }
   }
 
-  // ================= DELETE =================
-  Future<void> deleteTeacher(String name) async {
+  // ============== DELETE TEACHER BY ID ==============
+  Future<void> deleteTeacherById(int id) async {
     try {
       final res = await http.delete(
-        Uri.parse("$teacherApi/delete"),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"teacherName": name}),
+        Uri.parse("$teacherApi/delete/$id"),
       );
 
       final json = jsonDecode(res.body);
@@ -169,7 +167,7 @@ class _TeachersState extends State<Teachers> {
   }
 
   // CONFIRM DELETE
-  Future<void> confirmDeleteTeacher(String name) async {
+  Future<void> confirmDeleteTeacher(int id, String name) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -186,56 +184,56 @@ class _TeachersState extends State<Teachers> {
       ),
     );
 
-    if (confirm == true) deleteTeacher(name);
+    if (confirm == true) deleteTeacherById(id);
   }
 
-  // ================= REACTIVATE =================
-  Future<void> reactivateTeacher(String name) async {
+  // ============== REACTIVATE TEACHER BY ID ==============
+  Future<void> reactivateTeacherById(int id) async {
     try {
-      final res = await http.put(Uri.parse("$teacherApi/reactivate/$name"));
+      final res = await http.put(Uri.parse("$teacherApi/reactivate/$id"));
       final json = jsonDecode(res.body);
 
       showSnack(json["message"]);
 
       if (res.statusCode == 200) {
-        fetchTeachers();
         fetchInactiveTeachers();
+        fetchTeachers();
       }
     } catch (e) {
       showSnack("Error: $e");
     }
   }
 
-  Future<void> confirmReactivateTeacher(String name) async {
+  Future<void> confirmReactivateTeacher(int id, String name) async {
     final confirm = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
+      builder: (_) => AlertDialog(
         title: const Text("Reactivate Teacher"),
         content: Text("Reactivate \"$name\"?"),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
+              onPressed: () => Navigator.pop(context, false),
               child: const Text("Cancel")),
           ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
+              onPressed: () => Navigator.pop(context, true),
               child: const Text("Reactivate")),
         ],
       ),
     );
 
-    if (confirm == true) reactivateTeacher(name);
+    if (confirm == true) reactivateTeacherById(id);
   }
 
-  // CLEAR FIELDS
   void clearFields() {
     nameController.clear();
     phoneController.clear();
     emailController.clear();
     ageController.clear();
+    salaryController.clear();
     courseController.clear();
   }
 
-  // FORM POPUP
+  // POPUP FORM
   void showTeacherDialog({Map<String, dynamic>? teacher}) {
     final editing = teacher != null;
 
@@ -244,6 +242,7 @@ class _TeachersState extends State<Teachers> {
       phoneController.text = teacher["phoneNumber"];
       emailController.text = teacher["email"];
       ageController.text = teacher["age"].toString();
+      salaryController.text = teacher["salaryPerHour"] ?? "";
       courseController.text =
           (teacher["coursesTea"] as List?)?.join(", ") ?? "";
     } else {
@@ -263,6 +262,7 @@ class _TeachersState extends State<Teachers> {
                 _field(phoneController, "Phone"),
                 _field(emailController, "Email"),
                 _field(ageController, "Age"),
+                _field(salaryController, "Salary Per Hour"),
                 _field(courseController, "Courses (comma separated)"),
               ],
             ),
@@ -274,13 +274,11 @@ class _TeachersState extends State<Teachers> {
             ElevatedButton(
               style: ButtonStyle(
                   backgroundColor: MaterialStateProperty.all(TColors.info)),
+              child: Text(editing ? "Update" : "Save"),
               onPressed: () {
                 Navigator.pop(context);
-                editing
-                    ? updateTeacher(teacher!["teacherName"])
-                    : createTeacher();
+                editing ? updateTeacherById(teacher!["id"]) : createTeacher();
               },
-              child: Text(editing ? "Update" : "Save"),
             ),
           ],
         ),
@@ -299,7 +297,7 @@ class _TeachersState extends State<Teachers> {
     );
   }
 
-  // ================= UI =================
+  // ========= UI =========
   @override
   Widget build(BuildContext context) {
     final list = showInactive ? inactiveTeachers : teachers;
@@ -319,10 +317,7 @@ class _TeachersState extends State<Teachers> {
               showInactive ? fetchInactiveTeachers() : fetchTeachers();
             },
           ),
-          IconButton(
-            onPressed: fetchTeachers,
-            icon: const Icon(Icons.refresh),
-          ),
+          IconButton(onPressed: fetchTeachers, icon: const Icon(Icons.refresh)),
         ],
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
@@ -364,15 +359,13 @@ class _TeachersState extends State<Teachers> {
                               ],
                             ),
                             child: ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 10),
                               title: Row(
                                 children: [
                                   Text(
                                     t["teacherName"],
                                     style: const TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold),
                                   ),
                                   const SizedBox(width: 10),
                                   Container(
@@ -380,26 +373,27 @@ class _TeachersState extends State<Teachers> {
                                         horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
                                       color: showInactive
-                                          ? TColors.error.withOpacity(0.15)
-                                          : TColors.success.withOpacity(0.15),
+                                          ? TColors.error.withOpacity(0.2)
+                                          : TColors.success.withOpacity(0.2),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Text(
                                       showInactive ? "Inactive" : "Active",
                                       style: TextStyle(
-                                          color: showInactive
-                                              ? TColors.error
-                                              : TColors.success,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold),
+                                        color: showInactive
+                                            ? TColors.error
+                                            : TColors.success,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                 ],
                               ),
                               subtitle: Padding(
-                                padding: const EdgeInsets.only(top: 6),
+                                padding: const EdgeInsets.only(top: 5),
                                 child: Text(
-                                  "Courses: ${(t["coursesTea"] as List?)?.join(', ') ?? 'N/A'}",
+                                  "Courses: ${(t["coursesTea"] as List?)?.join(", ") ?? "N/A"}\nSalary/hr: ${t["salaryPerHour"] ?? "Not set"}",
                                   style: TextStyle(
                                     color: isDark
                                         ? Colors.white70
@@ -412,7 +406,7 @@ class _TeachersState extends State<Teachers> {
                                       icon: const Icon(Icons.refresh,
                                           color: Colors.green),
                                       onPressed: () => confirmReactivateTeacher(
-                                          t["teacherName"]),
+                                          t["id"], t["teacherName"]),
                                     )
                                   : Wrap(
                                       spacing: 8,
@@ -427,7 +421,7 @@ class _TeachersState extends State<Teachers> {
                                           icon: const Icon(Icons.delete,
                                               color: TColors.error),
                                           onPressed: () => confirmDeleteTeacher(
-                                              t["teacherName"]),
+                                              t["id"], t["teacherName"]),
                                         ),
                                       ],
                                     ),

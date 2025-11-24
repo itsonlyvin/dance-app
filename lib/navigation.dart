@@ -2,7 +2,8 @@ import 'dart:ui';
 
 import 'package:Fin/features/creation/creation.dart';
 import 'package:Fin/features/fee/fee.dart';
-import 'package:Fin/features/fees%20marking/fees_marking.dart';
+import 'package:Fin/features/fees_teacher/fees_teacher.dart';
+
 import 'package:Fin/features/sections/section.dart';
 
 import 'package:Fin/utils/constants/colors.dart';
@@ -84,19 +85,19 @@ class NavigationMenu extends StatelessWidget {
                       ),
                       _buildNavItem(
                         icon: Iconsax.personalcard,
-                        label: "Students",
+                        label: "Create",
                         selected: controller.selectedIndex.value == 1,
                         context: context,
                       ),
                       _buildNavItem(
                         icon: Iconsax.teacher,
-                        label: "Teachers",
+                        label: "Teachers Salary",
                         selected: controller.selectedIndex.value == 2,
                         context: context,
                       ),
                       _buildNavItem(
                         icon: Iconsax.money,
-                        label: "Fee",
+                        label: "Student Fee",
                         selected: controller.selectedIndex.value == 3,
                         context: context,
                       ),
@@ -160,7 +161,7 @@ class NavigationController extends GetxController {
     screens = const [
       Section(),
       CreationPage(),
-      FeesMarking(),
+      TeacherFeePage(),
       Fee(),
     ];
   }
